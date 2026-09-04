@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: realestate_postgres
+    environment:
+      POSTGRES_USER: realestate_user
+      POSTGRES_PASSWORD: realestate_password
+      POSTGRES_DB: real_estate_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U realestate_user -d real_estate_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: realestate_qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: realestate_backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://realestate_user:realestate_password@postgres:5432/real_estate_db
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      TAVILY_API_KEY: ${TAVILY_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+
+    volumes:
+      - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  qdrant_data:

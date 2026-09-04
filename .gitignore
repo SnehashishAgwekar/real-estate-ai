@@ -1,0 +1,5 @@
+backend/venv/
+backend/__pycache__/
+backend/app/models/places365/*.pth.tar
+node_modules/
+.env

@@ -1,0 +1,5 @@
+property_name,city,location,price_raw,bhk,area_sqft,property_type,builder_name,amenities,source,source_url
+"ABC Residency",indore,"Vijay Nagar","8500000",3,1500,"Apartment","ABC Group","Gym, Pool, Clubhouse","MagicBricks","https://example.com/p1"
+"ABC Residency",Indore,"Vijay Nagar","85 Lakhs",3,1500,"Apartment","ABC Group","Gym, Pool","Housing.com","https://example.com/p2"
+"Green Valley Villa",Indore,"Bypass Road","1.5 Cr",4,2800,"Villa","Green Builders","Garden, Security","Housing.com","https://example.com/p3"
+"Skyline Heights",indore,"Super Corridor","4500000",2,1050,"Apartment","Skyline Developers","Parking, Power Backup","Builder Site","https://example.com/p4"
