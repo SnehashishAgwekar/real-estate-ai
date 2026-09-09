@@ -1,5 +1,6 @@
 import os
 from typing import List, Dict, Any
+from urllib.parse import urlparse
 from tavily import TavilyClient
 from dotenv import load_dotenv
 
@@ -15,21 +16,29 @@ def query_web_search(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
         return [{"error": "Tavily API key is missing. Please set TAVILY_API_KEY in .env"}]
 
     client = TavilyClient(api_key=TAVILY_API_KEY)
-    
+
     try:
-        # Search web with real-estate specific context filter
+        # "advanced" depth returns longer, more detailed content snippets
         response = client.search(
             query=query,
-            search_depth="basic",
-            max_results=max_results
+            search_depth="advanced",
+            max_results=max_results,
         )
-        
+
         results = []
+        seen_domains = {}
         for item in response.get("results", []):
+            url = item.get("url") or ""
+            # collapse many results from the same portal down to the best 2
+            domain = urlparse(url).netloc.replace("www.", "")
+            seen_domains[domain] = seen_domains.get(domain, 0) + 1
+            if seen_domains[domain] > 2:
+                continue
             results.append({
                 "title": item.get("title"),
-                "url": item.get("url"),
-                "snippet": item.get("content")
+                "url": url,
+                "snippet": item.get("content"),
+                "score": item.get("score"),
             })
         return results
 

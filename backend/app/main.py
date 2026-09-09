@@ -1,23 +1,36 @@
+import os
 import traceback
 import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from app.agents.graph import app as agent_app
 from app.api.verification import router as verification_router
+from app.api.broker import router as broker_router
+from app.api.auth import router as auth_router
+from app.api.properties import router as properties_router
+from app.core.storage import STATIC_DIR, UPLOAD_DIR
 
 app = FastAPI(title="Real Estate AI")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], 
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Ensure backend/static/uploads exists, then serve backend/static at /static
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(verification_router)
+app.include_router(broker_router, prefix="/api/v1/broker", tags=["Broker Dashboard"])
+app.include_router(properties_router, prefix="/api/v1/properties", tags=["Properties"])
 
 class ChatRequest(BaseModel):
     user_query: str
@@ -86,6 +99,10 @@ async def chat_stream(payload: dict):
                         clean_update["intent"] = state_update["intent"]
                     if "parsed_filters" in state_update:
                         clean_update["parsed_filters"] = state_update["parsed_filters"]
+                    if "sql_results" in state_update:
+                        # Our own broker listings -> frontend renders these as
+                        # interactive cards with an "Interested" button.
+                        clean_update["sql_results"] = state_update["sql_results"]
                     if "final_response" in state_update:
                         clean_update["final_response"] = state_update["final_response"]
 

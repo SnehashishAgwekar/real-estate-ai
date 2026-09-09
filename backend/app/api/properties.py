@@ -1,0 +1,128 @@
+from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.database.connection import get_db
+from app.database.models import PropertyModel, PropertyInterest, UserModel
+from app.core.security import get_current_user
+from app.core.notifications import notify_property_interest
+
+router = APIRouter()
+
+
+def require_end_user(current_user: UserModel = Depends(get_current_user)) -> UserModel:
+    if current_user.role != "user":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only user accounts can express interest in a listing",
+        )
+    return current_user
+
+
+class InterestRequest(BaseModel):
+    message: Optional[str] = Field(default=None, max_length=1000)
+
+
+def _contact(u: Optional[UserModel]) -> dict:
+    if u is None:
+        return {"name": None, "email": None, "phone": None}
+    return {"name": u.name, "email": u.email, "phone": u.phone_number}
+
+
+@router.post("/{property_id}/interest", status_code=status.HTTP_201_CREATED)
+def express_interest(
+    property_id: int,
+    payload: InterestRequest,
+    background_tasks: BackgroundTasks,
+    current_user: UserModel = Depends(require_end_user),
+    db: Session = Depends(get_db),
+):
+    """
+    A user taps "Interested" on a broker's listing. Records the interest (once
+    per user+property) and hands the user the broker's contact details. The
+    broker picks the same record up from GET /api/v1/broker/leads.
+    """
+    prop = db.query(PropertyModel).filter(PropertyModel.id == property_id).first()
+    if prop is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+    if not prop.broker_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This listing is not linked to a broker, so there is no one to contact.",
+        )
+
+    broker = db.query(UserModel).filter(UserModel.id == prop.broker_id).first()
+
+    existing = (
+        db.query(PropertyInterest)
+        .filter(
+            PropertyInterest.property_id == property_id,
+            PropertyInterest.user_id == current_user.id,
+        )
+        .first()
+    )
+    if existing is None:
+        interest = PropertyInterest(
+            property_id=property_id,
+            user_id=current_user.id,
+            broker_id=prop.broker_id,
+            message=(payload.message or None),
+        )
+        db.add(interest)
+        db.commit()
+
+        # SMS both parties (fire-and-forget; no-op until SMS_PROVIDER is set).
+        # Only on a NEW interest, not on repeat taps.
+        background_tasks.add_task(
+            notify_property_interest,
+            property_name=prop.property_name,
+            buyer_name=current_user.name,
+            buyer_phone=current_user.phone_number,
+            buyer_email=current_user.email,
+            broker_name=broker.name if broker else None,
+            broker_phone=broker.phone_number if broker else None,
+            broker_email=broker.email if broker else None,
+        )
+
+    return {
+        "property_id": prop.id,
+        "property_name": prop.property_name,
+        "already_registered": existing is not None,
+        # The user's half of the exchange: the broker's contact details.
+        "broker": _contact(broker),
+        "notice": (
+            f"The broker has been notified that you're interested in "
+            f"\"{prop.property_name}\" and now has your contact details. "
+            "You can also reach out to them directly using the details above."
+        ),
+    }
+
+
+@router.get("/my-interests")
+def my_interests(
+    current_user: UserModel = Depends(require_end_user),
+    db: Session = Depends(get_db),
+):
+    """Listings this user has tapped 'Interested' on, with the broker contact."""
+    rows = (
+        db.query(PropertyInterest, PropertyModel, UserModel)
+        .join(PropertyModel, PropertyInterest.property_id == PropertyModel.id)
+        .join(UserModel, PropertyInterest.broker_id == UserModel.id)
+        .filter(PropertyInterest.user_id == current_user.id)
+        .order_by(PropertyInterest.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "interest_id": interest.id,
+            "created_at": interest.created_at,
+            "property_id": prop.id,
+            "property_name": prop.property_name,
+            "city": prop.city,
+            "location": prop.location,
+            "broker": _contact(broker),
+        }
+        for (interest, prop, broker) in rows
+    ]

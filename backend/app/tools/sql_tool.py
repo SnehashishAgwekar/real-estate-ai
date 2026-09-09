@@ -5,7 +5,8 @@ from app.database.models import PropertyModel
 def query_structured_properties(
     db: Session,
     city: Optional[str] = None,
-    min_price: Optional[float] = None, # <-- Added min_price argument
+    location: Optional[str] = None,
+    min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     min_bhk: Optional[int] = None,
     property_type: Optional[str] = None,
@@ -18,8 +19,11 @@ def query_structured_properties(
 
     if city:
         query = query.filter(PropertyModel.city.ilike(f"%{city.strip()}%"))
+    if location:
+        # locality / area / sector match, e.g. "Super Corridor", "Vijay Nagar"
+        query = query.filter(PropertyModel.location.ilike(f"%{location.strip()}%"))
     if min_price:
-        query = query.filter(PropertyModel.price_in_inr >= min_price) # <-- Added min_price filter
+        query = query.filter(PropertyModel.price_in_inr >= min_price)
     if max_price:
         query = query.filter(PropertyModel.price_in_inr <= max_price)
     if min_bhk:
@@ -27,7 +31,7 @@ def query_structured_properties(
     if property_type:
         query = query.filter(PropertyModel.property_type.ilike(f"%{property_type.strip()}%"))
 
-    results = query.limit(limit).all()
+    results = query.order_by(PropertyModel.created_at.desc()).limit(limit).all()
 
     properties_list = []
     for p in results:
@@ -39,10 +43,17 @@ def query_structured_properties(
             "price_in_inr": p.price_in_inr,
             "bhk": p.bhk,
             "area_sqft": p.area_sqft,
+            "area_unit": p.area_unit or "sqft",
             "property_type": p.property_type,
             "builder_name": p.builder_name,
             "amenities": p.amenities,
-            "source": p.source
+            "availability_status": p.availability_status,
+            "image_urls": p.image_urls or [],
+            "source_url": p.source_url,
+            "source": p.source,
+            "broker_id": p.broker_id,
+            # True when this is one of our own broker-uploaded listings
+            "on_platform": p.broker_id is not None,
         })
 
     return properties_list

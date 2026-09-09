@@ -27,36 +27,35 @@ def classify_intent_node(state: AgentState) -> AgentState:
         return {**state, "user_query": user_q, "intent": intent, "parsed_filters": filters}
     except Exception as e:
         print(f"\n[WARNING] Router LLM failed/rate limited: {e}\n")
-        # Fallback to sql_search instead of general for property keywords
-        return {**state, "intent": "sql_search", "parsed_filters": {"city": "Indore", "max_price": 30000000, "min_bhk": 3}}
+        # Treat as a property search but don't invent filters the user never gave
+        return {**state, "intent": "sql_search", "parsed_filters": {}}
 
 def sql_execution_node(state: AgentState) -> AgentState:
+    """
+    Always run first for a property query: look for matching listings that
+    brokers have published on our own platform (Postgres).
+    """
     db = SessionLocal()
     try:
-        filters = state.get("parsed_filters", {})
+        filters = state.get("parsed_filters", {}) or {}
         results = query_structured_properties(
             db=db,
-            city=filters.get("city", "Indore"),
-            max_price=filters.get("max_price", 30000000),
-            min_bhk=filters.get("min_bhk", 3),
+            city=filters.get("city") or None,
+            location=filters.get("location") or None,
+            min_price=filters.get("min_price") or None,
+            max_price=filters.get("max_price") or None,
+            min_bhk=filters.get("min_bhk") or None,
+            property_type=filters.get("property_type") or None,
         )
-        print(f"\n--- [DEBUG] SQL Execution Results Count: {len(results) if results else 0} ---\n")
+        # Only surface our own broker-uploaded listings for the "Interested" flow
+        results = [r for r in (results or []) if r.get("on_platform")]
+        print(f"\n--- [DEBUG] SQL Execution (on-platform) Count: {len(results)} ---\n")
         return {**state, "sql_results": results}
     except Exception as e:
         print(f"\n[ERROR] SQL Execution Failed: {e}\n")
         return {**state, "sql_results": []}
     finally:
         db.close()
-
-# Routing function: Forcefully handle routing without breaking to web search if it's a property query
-def route_after_sql(state: AgentState) -> str:
-    sql_results = state.get("sql_results", [])
-    if sql_results and len(sql_results) > 0:
-        print("\n--- [DEBUG] SQL found properties! Routing directly to Synthesizer. ---\n")
-        return "synthesizer"
-    else:
-        print("\n--- [DEBUG] SQL returned 0 results! Falling back to Web Search. ---\n")
-        return "web_search_execution"
 
 def rag_execution_node(state: AgentState) -> AgentState:
     query = state.get("user_query", "real estate")
@@ -65,7 +64,7 @@ def rag_execution_node(state: AgentState) -> AgentState:
 
 def web_search_node(state: AgentState) -> AgentState:
     query = state.get("user_query", "real estate properties")
-    results = query_web_search(query=query, max_results=3)
+    results = query_web_search(query=f"{query} property listings for sale", max_results=6)
     return {**state, "web_results": results}
 
 def general_knowledge_node(state: AgentState) -> AgentState:
@@ -101,38 +100,65 @@ Provide your response below:"""
 
 def synthesizer_node(state: AgentState) -> AgentState:
     print("\n--- [DEBUG] Executing LLM Synthesizer Node! ---\n")
-    intent = state.get("intent")
     query = state.get("user_query", "")
-    sql_results = state.get("sql_results", [])
-    
-    # 1. Gather raw data found by the tools
-    context_data = ""
+    sql_results = state.get("sql_results", []) or []
+    rag_results = state.get("rag_results", []) or []
+    web_results = state.get("web_results", []) or []
+
+    # Our own broker listings are rendered by the frontend as interactive cards
+    # (with an "Interested" button) ABOVE this text, so the text must not repeat
+    # them -- it only covers the external web options.
+    on_platform_names = [r.get("property_name", "") for r in sql_results]
     if sql_results:
-        context_data = f"Database Results: {sql_results}"
-    elif state.get("rag_results"):
-        context_data = f"Document Snippets: {state['rag_results']}"
-    elif state.get("web_results"):
-        context_data = f"Web Results: {state['web_results']}"
+        on_platform_note = (
+            f"SEPARATELY, {len(sql_results)} verified listing(s) from our own "
+            f"brokers are already shown to the user as cards above this message: "
+            f"{on_platform_names}. Do NOT describe or list these again. Skip any "
+            f"web result that is clearly the same property as one of those names."
+        )
     else:
-        context_data = "No specific database rows matched, providing general verified property context."
+        on_platform_note = (
+            "There are NO listings from our own brokers for this query."
+        )
 
-    # 2. Dynamic prompt for formatting multiple options + clickable markdown links
-    prompt = f"""
-You are a professional real estate assistant. The user is searching based on this query: "{query}"
+    if web_results:
+        context_data = f"Raw web search results (title, url, snippet):\n{web_results}"
+    elif rag_results:
+        context_data = f"Document snippets:\n{rag_results}"
+    else:
+        context_data = "No external web results were found."
 
-Here is the raw data fetched from the database / search:
+    prompt = f"""You are a real estate assistant. The user asked: "{query}"
+
+{on_platform_note}
+
+RAW WEB DATA (mine every field you can from the title + snippet of each item):
 {context_data}
 
-TASK:
-1. Extract multiple distinct property options matching the user's requirements.
-2. For each option, clearly display:
-   - Property Name / Type
-   - Location
-   - Estimated Price
-   - Configuration (e.g., 3 BHK)
-3. **CRITICAL (Clickable Links):** Include the exact source URL from the raw data as a Markdown clickable link for each property using this format: 
-   👉 [View Original Listing](URL_HERE)
-4. Do not make up fake links. Use only the valid URLs present in the raw data above. If no URL is available, omit the link cleanly.
+Write a Markdown answer covering ONLY web options. Follow this exactly:
+
+1. First line: "## Results from Web"
+2. Then, for each DISTINCT property/project, one block formatted as:
+
+**<Real project or society name — take it from the title/snippet, not a generic label>**
+- Location: <locality, city — be specific>
+- Price: <price or range from the data; write "Not stated" only if truly absent — do NOT write "Price on request">
+- Configuration: <e.g. 3 BHK, 1660 sq.ft.>
+- Builder/Seller: <name if present, else omit this line>
+- Highlights: <1 short line of amenities/USP from the snippet, else omit>
+- 👉 [View Listing](<one exact URL from that item>)
+
+RULES:
+- DE-DUPLICATE hard: if two items are the same project, the same portal search
+  page, or near-identical titles ("3 BHK Flat in X" vs "Resale 3 BHK Flat in X"),
+  keep only ONE — the more detailed one.
+- Skip any item that just points to a portal search/category page with no real
+  project. Skip anything matching an on-platform listing name above.
+- Exactly ONE link per block. Never repeat a URL. Never invent one or a price.
+- Keep only properties in the location/budget the user asked for. Max 4 blocks.
+- Separate blocks with one blank line.
+- If nothing usable remains, write "## Results from Web" then one line saying no
+  distinct web listings were found and suggest broadening the search.
 """
 
     try:
@@ -141,7 +167,10 @@ TASK:
     except Exception as e:
         print(f"\n[WARNING] Synthesizer LLM Quota hit: {e}\n")
         if sql_results:
-            content = f"I found matching properties in the database:\n{sql_results}"
+            content = (
+                f"You have {len(sql_results)} verified listing(s) from our brokers "
+                "shown above. (Web summary is unavailable right now -- please retry.)"
+            )
         else:
             content = "I'm currently experiencing high traffic. Please wait a moment and try your query again."
 
@@ -154,11 +183,15 @@ TASK:
 # ---------------------------------------------------------
 def route_next_step(state: AgentState) -> str:
     intent = state.get("intent")
-    if intent == "sql_search": return "sql_execution"
-    elif intent == "rag_search": return "rag_execution"
-    elif intent == "web_search": return "web_search_execution"
-    elif intent == "general": return "general_knowledge"
-    return "sql_execution" # Default fallback to sql instead of synthesizer
+    # Any property search -- whether the router guessed sql_search or web_search --
+    # starts by checking our own broker listings, then always adds a web search.
+    if intent in ("sql_search", "web_search"):
+        return "sql_execution"
+    if intent == "rag_search":
+        return "rag_execution"
+    if intent == "general":
+        return "general_knowledge"
+    return "sql_execution"
 
 builder = StateGraph(AgentState)
 builder.add_node("classifier", classify_intent_node)
@@ -175,24 +208,15 @@ builder.add_conditional_edges(
     {
         "sql_execution": "sql_execution",
         "rag_execution": "rag_execution",
-        "web_search_execution": "web_search_execution",
         "general_knowledge": "general_knowledge",
-        "synthesizer": "synthesizer"
     }
 )
 
-# FIXED: SQL execution ke baad seedha synthesizer par jayega, web search par nahi bhatkega
-builder.add_conditional_edges(
-    "sql_execution",
-    route_after_sql,
-    {
-        "synthesizer": "synthesizer",
-        "web_search_execution": "web_search_execution"
-    }
-)
-
-builder.add_edge("rag_execution", "synthesizer")
+# Property flow: our broker listings first, THEN always a web search, THEN
+# synthesise both (frontend renders the SQL listings as "Interested" cards).
+builder.add_edge("sql_execution", "web_search_execution")
 builder.add_edge("web_search_execution", "synthesizer")
+builder.add_edge("rag_execution", "synthesizer")
 
 builder.add_edge("general_knowledge", END)
 builder.add_edge("synthesizer", END)
