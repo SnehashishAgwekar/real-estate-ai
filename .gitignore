@@ -1,5 +1,6 @@
 backend/venv/
-backend/__pycache__/
+__pycache__/
+*.pyc
 backend/app/models/places365/*.pth.tar
 backend/static/uploads/
 node_modules/

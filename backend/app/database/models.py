@@ -29,17 +29,24 @@ class PropertyModel(Base):
     property_name = Column(String(255), nullable=False, index=True)
     city = Column(String(100), nullable=False, index=True)
     location = Column(String(255), nullable=False)
+    # For a "Sale" listing this is the sale price; for a "Rent" listing it's
+    # the monthly rent amount.
     price_in_inr = Column(Float, nullable=False, index=True)
-    
+
+    # "Sale" or "Rent"
+    listing_type = Column(String(20), nullable=False, default="Sale", index=True)
+    # Only meaningful when listing_type == "Rent"
+    security_deposit = Column(Float, nullable=True)
+
     # Modified: nullable=True since plots/land don't have bedrooms
-    bhk = Column(Integer, nullable=True, index=True) 
-    
+    bhk = Column(Integer, nullable=True, index=True)
+
     area_sqft = Column(Float, nullable=False)
     # New: To display the original unit (e.g., "acre", "sqft", "sq_yard")
-    area_unit = Column(String(20), default="sqft") 
-    
+    area_unit = Column(String(20), default="sqft")
+
     # property_type handles "Apartment", "Villa", "Plot", "Commercial"
-    property_type = Column(String(50), nullable=False)  
+    property_type = Column(String(50), nullable=False)
     builder_name = Column(String(150), nullable=True)
     amenities = Column(Text, nullable=True)
     availability_status = Column(String(50), default="Ready to Move")

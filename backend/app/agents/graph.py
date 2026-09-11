@@ -46,6 +46,7 @@ def sql_execution_node(state: AgentState) -> AgentState:
             max_price=filters.get("max_price") or None,
             min_bhk=filters.get("min_bhk") or None,
             property_type=filters.get("property_type") or None,
+            listing_type=filters.get("listing_type") or None,
         )
         # Only surface our own broker-uploaded listings for the "Interested" flow
         results = [r for r in (results or []) if r.get("on_platform")]

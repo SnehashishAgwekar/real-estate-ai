@@ -8,7 +8,7 @@ from typing import Optional
 from email_validator import validate_email, EmailNotValidError, EmailUndeliverableError
 from app.database.connection import get_db
 from app.database.models import UserModel
-from app.core.security import get_password_hash, verify_password, create_access_token
+from app.core.security import get_password_hash, verify_password, create_access_token, get_current_user
 
 router = APIRouter()
 
@@ -81,3 +81,66 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
     token = create_access_token(data={"sub": str(user.id), "role": user.role})
     return {"access_token": token, "token_type": "bearer", "role": user.role}
+
+
+class ProfileOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone_number: Optional[str] = None
+    role: str
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/me", response_model=ProfileOut)
+def get_me(current_user: UserModel = Depends(get_current_user)):
+    """The signed-in user's own profile — backs the 'Profile Details' tab
+    and fills in what /login doesn't return (name, phone)."""
+    return current_user
+
+
+class UpdateLoginDetailsRequest(BaseModel):
+    name: Optional[str] = None
+    phone_number: Optional[str] = None
+
+
+@router.put("/me", response_model=ProfileOut)
+def update_me(
+    payload: UpdateLoginDetailsRequest,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """'Edit Login Details': name and phone number. Email is intentionally
+    not editable here (it's the login identity)."""
+    if payload.name is not None:
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name cannot be empty")
+        current_user.name = name
+    if payload.phone_number is not None:
+        current_user.phone_number = payload.phone_number.strip() or None
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 6 characters")
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+    return {"detail": "Password updated successfully"}
