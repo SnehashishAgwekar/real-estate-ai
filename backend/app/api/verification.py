@@ -1,11 +1,9 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from starlette.concurrency import run_in_threadpool
-from app.services.room_classifier import classify_room
-from app.services.bhk_verifier import verify_bhk
+from app.services.gemini_verifier import verify_property_with_gemini
 
 router = APIRouter(prefix="/api/v1", tags=["Verification"])
 
-# ... existing imports ...
 
 @router.post("/verify-property")
 async def verify_property(
@@ -16,30 +14,23 @@ async def verify_property(
         raise HTTPException(status_code=400, detail="No images provided.")
     if len(images) > 8:
         raise HTTPException(status_code=400, detail="Maximum limit of 8 images exceeded.")
-        
-    classified_results = []
-    
+
+    prepared = []
     for idx, img in enumerate(images):
         if not img.content_type or not img.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail=f"File {img.filename} is not a valid image.")
-        
         image_bytes = await img.read()
-        
-        try:
-            result = await run_in_threadpool(classify_room, image_bytes)
-            # Inject bytes and index for the downstream deduplicator pipeline
-            result["image_bytes"] = image_bytes
-            result["photo_index"] = idx + 1
-            classified_results.append(result)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error processing image {img.filename}: {str(e)}")
-            
-    verdict = verify_bhk(classified_results, claimed_bhk)
-    
-    # Optional: Clear heavy image bytes from memory before returning the JSON response
-    for room in verdict.get("all_detected_rooms", []):
-        room.pop("image_bytes", None)
-    
+        prepared.append({
+            "photo_index": idx + 1,
+            "image_bytes": image_bytes,
+            "mime_type": img.content_type,
+        })
+
+    try:
+        verdict = await run_in_threadpool(verify_property_with_gemini, prepared, claimed_bhk)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini verification failed: {str(e)}")
+
     return {
         "verdict": verdict,
         "images_analyzed": len(images)

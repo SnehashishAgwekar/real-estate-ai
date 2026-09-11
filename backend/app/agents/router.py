@@ -39,6 +39,11 @@ class QueryExtraction(BaseModel):
         description="One of Apartment/Villa/Plot/Commercial/Independent House if "
         "clearly implied, else null",
     )
+    listing_type: Optional[str] = Field(
+        default=None,
+        description="'Rent' if the user is looking to rent/lease, 'Sale' if they "
+        "want to buy/purchase, else null if not stated.",
+    )
 
 
 llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", api_key=os.getenv("GOOGLE_API_KEY"))
@@ -64,6 +69,11 @@ def _fallback_extract(query: str) -> Tuple[str, Dict[str, Any]]:
     if m:
         filters["max_price"] = float(m.group(1)) * _UNIT[m.group(2)]
 
+    if re.search(r"\b(rent|rental|lease|to let)\b", q):
+        filters["listing_type"] = "Rent"
+    elif re.search(r"\b(buy|purchase|for sale)\b", q):
+        filters["listing_type"] = "Sale"
+
     intent = "sql_search" if any(w in q for w in _PROPERTY_WORDS) else "general"
     return intent, filters
 
@@ -86,6 +96,7 @@ def classify_intent_and_extract_params(query: str) -> Tuple[str, Dict[str, Any]]
             "max_price": result.max_price,
             "min_bhk": result.min_bhk,
             "property_type": result.property_type,
+            "listing_type": result.listing_type,
         }
         filters = {k: v for k, v in filters.items() if v not in (None, "", 0)}
 

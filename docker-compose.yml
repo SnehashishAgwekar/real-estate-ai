@@ -17,34 +17,14 @@ services:
       retries: 5
 
   qdrant:
-    image: qdrant/qdrant:latest
+    # Pinned to a version that can read the on-disk segment format in the
+    # existing qdrant_data volume; qdrant:latest (1.19.x) panics on it.
+    image: qdrant/qdrant:v1.11.0
     container_name: realestate_qdrant
     ports:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: realestate_backend
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://realestate_user:realestate_password@postgres:5432/real_estate_db
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
-      TAVILY_API_KEY: ${TAVILY_API_KEY}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-
-    volumes:
-      - ./data:/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
 
 volumes:
   postgres_data:

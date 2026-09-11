@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  Building2, Send, Bot, User, Database, FileText, Globe, Sparkles,
+  Send, Bot, User, Database, FileText, Globe, Sparkles,
   RotateCcw, Loader2, SlidersHorizontal, ChevronRight, Home, ShieldCheck,
   Cpu, CheckCircle2, Plus, MessageSquare, Trash2, Upload, X, CheckCircle, AlertTriangle,
-  LogOut, LogIn, UserPlus, Mail, Lock, Phone, Briefcase, MapPin, BedDouble
+  LogOut, LogIn, UserPlus, Mail, Lock, Phone, Briefcase, MapPin, BedDouble,
+  Tag, KeyRound, UserCircle
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import LandingPage from "./components/LandingPage";
+import CasivaLogo from "./components/CasivaLogo";
+import PropertyDashboard from "./components/PropertyDashboard";
+import MyProfile from "./components/MyProfile";
+import BrokerAssistant from "./components/BrokerAssistant";
 
 const API_STREAM_URL = "http://localhost:8000/api/v1/chat-stream";
 const API_VERIFY_URL = "http://localhost:8000/api/v1/verify-property";
@@ -21,7 +28,8 @@ const MEDIA_BASE = "http://localhost:8000";
 
 const EMPTY_LISTING = {
   property_name: "", city: "", location: "", price_in_inr: "", area_sqft: "",
-  property_type: "Apartment", bhk: "", area_unit: "sqft", builder_name: "",
+  property_type: "Apartment", listing_type: "Sale", security_deposit: "",
+  bhk: "", area_unit: "sqft", builder_name: "",
   amenities: "", availability_status: "Ready to Move",
 };
 
@@ -34,6 +42,12 @@ const errDetail = (data, fallback) => {
   return fallback;
 };
 
+// "₹ 18,000/mo" for a rental, "₹ 95,00,000" for a sale listing.
+const formatPrice = (p) => {
+  const amount = `₹ ${Number(p.price_in_inr || 0).toLocaleString("en-IN")}`;
+  return p.listing_type === "Rent" ? `${amount}/mo` : amount;
+};
+
 // Decode a JWT payload without verifying the signature (used only as a role fallback).
 const parseJwt = (t) => {
   try {
@@ -44,15 +58,17 @@ const parseJwt = (t) => {
   }
 };
 
-const HERO_IMAGE = "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=2000&q=80";
-const SIDEBAR_IMAGE = "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80";
-
 // Chat history is stored per user id so accounts sharing a browser never mix.
 const sessionsStorageKey = (uid) => `estate_chat_sessions_${uid || "anon"}`;
 
+// Same photo the landing page hero uses, so Get Started -> Login feels like
+// one continuous scene rather than a jump cut.
+const AUTH_BG_IMAGE =
+  "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=2400&q=80";
+
 const WELCOME_MESSAGE = {
   role: "assistant",
-  content: "Welcome to **EstateAgent AI**! How can I assist you with your property search today?",
+  content: "Welcome to **CASIVA**! How can I assist you with your property search today?",
   intent: null, filters: null, steps: [], properties: [],
 };
 
@@ -71,9 +87,28 @@ const loadUserSessions = (uid) => {
   return [newSessionObject()];
 };
 
-export default function App() {
-  // Views: "login" | "signup" | "chat" | "verify" | "broker-dashboard"
-  const [activeView, setActiveView] = useState("login");
+// One real URL per view so browser back/forward walks the app like a normal
+// breadcrumb trail: / (landing) -> /login|/signup -> /dashboard (or
+// /broker/dashboard for brokers) -> /chat -> /verify.
+const VIEW_PATHS = {
+  login: "/login",
+  signup: "/signup",
+  "property-dashboard": "/dashboard",
+  chat: "/chat",
+  verify: "/verify",
+  "broker-dashboard": "/broker/dashboard",
+  profile: "/profile",
+};
+const pathToView = (pathname) =>
+  Object.keys(VIEW_PATHS).find((view) => VIEW_PATHS[view] === pathname) || null;
+
+function AppShell() {
+  // The active "view" is derived from the URL (see VIEW_PATHS) rather than
+  // held as its own state, so browser back/forward walks these exactly like
+  // any other page: "login" | "signup" | "property-dashboard" | "chat" | "verify" | "broker-dashboard"
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeView = pathToView(location.pathname) || "login";
 
   // --- Auth state (JWT kept in memory only, never persisted) ---
   const [token, setToken] = useState(null);
@@ -108,6 +143,37 @@ export default function App() {
 
   const isAuthed = !!token && !!currentUser;
   const isBroker = isAuthed && currentUser.role === "broker";
+
+  // Route guard: corrects the URL when it doesn't match auth/role state
+  // (direct visits to a protected path while logged out, wrong-role paths,
+  // unknown paths). These are corrections, not user-chosen steps, so they
+  // replace the current history entry instead of pushing a new one.
+  //
+  // /login and /signup are deliberately NOT bounced away from when the user
+  // is already authenticated: browser back-navigation from the dashboard
+  // lands there by design (see VIEW_PATHS/pathToView), and redirecting
+  // forward again would make the back button look broken.
+  useEffect(() => {
+    const knownView = pathToView(location.pathname);
+    const homePath = isBroker ? VIEW_PATHS["broker-dashboard"] : VIEW_PATHS["property-dashboard"];
+
+    if (!isAuthed) {
+      if (knownView !== "login" && knownView !== "signup") {
+        navigate(VIEW_PATHS.login, { replace: true });
+      }
+      return;
+    }
+    if (knownView === "login" || knownView === "signup" || knownView === "profile") return;
+    if (knownView === null) {
+      navigate(homePath, { replace: true });
+      return;
+    }
+    if (isBroker && knownView !== "broker-dashboard") {
+      navigate(homePath, { replace: true });
+    } else if (!isBroker && knownView === "broker-dashboard") {
+      navigate(homePath, { replace: true });
+    }
+  }, [location.pathname, isAuthed, isBroker, navigate]);
 
   const [selectedBhk, setSelectedBhk] = useState(2);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -237,7 +303,7 @@ export default function App() {
               if (data.node) {
                 let nodeLabel = data.node;
                 if (["router", "classify_intent_node", "classifier"].includes(data.node)) nodeLabel = "🧠 Classifying intent & extracting filters";
-                else if (["sql_execution_node", "sql_execution"].includes(data.node)) nodeLabel = "🏠 Searching EstateAgent AI broker listings";
+                else if (["sql_execution_node", "sql_execution"].includes(data.node)) nodeLabel = "🏠 Searching CASIVA broker listings";
                 else if (["rag_execution_node", "rag_execution"].includes(data.node)) nodeLabel = "📄 Scanning Qdrant vector documents";
                 else if (["web_search_node", "web_search_execution"].includes(data.node)) nodeLabel = "🌐 Fetching live web insights";
                 else if (["synthesizer_node", "synthesizer"].includes(data.node)) nodeLabel = "✨ Synthesizing final response";
@@ -371,7 +437,7 @@ export default function App() {
     setVerifyResult(null);
     setSelectedFiles([]);
 
-    setActiveView(role === "broker" ? "broker-dashboard" : "chat");
+    navigate(role === "broker" ? VIEW_PATHS["broker-dashboard"] : VIEW_PATHS["property-dashboard"]);
   };
 
   const handleSignup = async (e) => {
@@ -476,11 +542,13 @@ export default function App() {
     setInterestState({});
     setVerifyResult(null);
     setSelectedFiles([]);
-    setActiveView("login");
+    navigate(VIEW_PATHS.login);
   };
 
+  // Login <-> Signup is a lateral toggle within the same step of the auth
+  // flow, not a forward step, so it replaces rather than pushes history.
   const switchAuthMode = (mode) => {
-    setActiveView(mode);
+    navigate(VIEW_PATHS[mode], { replace: true });
     setAuthError("");
   };
 
@@ -575,8 +643,12 @@ export default function App() {
       fd.append("price_in_inr", String(Number(f.price_in_inr)));
       fd.append("area_sqft", String(Number(f.area_sqft)));
       fd.append("property_type", f.property_type);
+      fd.append("listing_type", f.listing_type);
       fd.append("area_unit", f.area_unit.trim() || "sqft");
       fd.append("availability_status", f.availability_status);
+      if (f.listing_type === "Rent" && String(f.security_deposit).trim() !== "") {
+        fd.append("security_deposit", String(Number(f.security_deposit)));
+      }
       if (String(f.bhk).trim() !== "") fd.append("bhk", String(Number(f.bhk)));
       if (f.builder_name.trim()) fd.append("builder_name", f.builder_name.trim());
       if (f.amenities.trim()) fd.append("amenities", f.amenities.trim());
@@ -606,11 +678,11 @@ export default function App() {
       case "sql_search":
         return (
           <div className="flex flex-wrap items-center gap-2 mb-2.5">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-semibold uppercase tracking-wider bg-[#3F5142]/40 text-[#9FBF9A] border border-[#6E8B6E]/40 font-mono">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-semibold uppercase tracking-wider bg-[#D9EAD3]/40 text-[#4B7A46] border border-[#A9C9A0]/40 font-mono">
               <Database className="w-3 h-3" /> Property Registry Query
             </span>
             {filters && Object.keys(filters).length > 0 && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-mono bg-[#0C1420]/80 text-[#C9BFA6] border border-[#3A4457]">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-mono bg-[#1E1E1E]/80 text-[#6B6B6B] border border-[#EDE6D4]">
                 <SlidersHorizontal className="w-3 h-3 text-[#C6A15B]" />
                 {Object.entries(filters).map(([k, v]) => `${k}: ${v}`).join("  ·  ")}
               </span>
@@ -620,7 +692,7 @@ export default function App() {
       case "rag_search":
         return (
           <div className="mb-2.5">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-semibold uppercase tracking-wider bg-[#463C55]/40 text-[#C6B4DA] border border-[#8A6BA1]/40 font-mono">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-semibold uppercase tracking-wider bg-[#ECE3F5]/40 text-[#8A5FAE] border border-[#C9AEDD]/40 font-mono">
               <FileText className="w-3 h-3" /> Brochure Archive
             </span>
           </div>
@@ -628,7 +700,7 @@ export default function App() {
       case "web_search":
         return (
           <div className="mb-2.5">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-semibold uppercase tracking-wider bg-[#2A4152]/40 text-[#9CC4E0] border border-[#6FA3C7]/40 font-mono">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-semibold uppercase tracking-wider bg-[#E1EFF7]/40 text-[#3E7CA6] border border-[#B9D9EC]/40 font-mono">
               <Globe className="w-3 h-3" /> Live Market Insight
             </span>
           </div>
@@ -642,30 +714,46 @@ export default function App() {
   const renderAuthScreen = () => {
     const isSignup = activeView === "signup";
     const inputCls =
-      "w-full bg-[#0A121D]/90 border border-[#2C3A50] focus:border-[#C6A15B] rounded-md py-2.5 pl-9 pr-3 text-sm text-[#EDE7D9] placeholder-[#7D8AA1] focus:outline-none focus:ring-2 focus:ring-[#C6A15B]/30 transition disabled:opacity-50";
+      "w-full bg-[#FAF8F4] border border-[#E4DCC9] focus:border-[#C6A15B] rounded-md py-2.5 pl-9 pr-3 text-sm text-[#2B2B2B] placeholder-[#8B8B8B] focus:outline-none focus:ring-2 focus:ring-[#C6A15B]/30 transition disabled:opacity-50";
     const setField = (k) => (e) => setAuthForm((f) => ({ ...f, [k]: e.target.value }));
 
     return (
-      <div className="flex-1 flex items-center justify-center z-10 p-6 font-body">
-        <div className="w-full max-w-md bg-[#0E1725]/90 backdrop-blur-xl border border-[#C6A15B]/25 rounded-md shadow-2xl p-8 space-y-6">
+      <div
+        className="flex-1 relative flex items-center justify-center z-10 p-6 font-body overflow-y-auto"
+        style={{
+          backgroundImage: `linear-gradient(160deg, rgba(30,26,20,0.85) 0%, rgba(30,26,20,0.62) 45%, rgba(20,20,20,0.5) 100%), url(${AUTH_BG_IMAGE})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      >
+        {/* Editorial corner copy, echoing the landing page hero — hidden on
+            small screens so it never competes with the card for space. */}
+        <div className="hidden lg:block absolute bottom-10 left-10 max-w-xs">
+          <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#C6A15B] font-semibold mb-2">
+            Private Client Real Estate
+          </p>
+          <p className="font-display text-xl leading-snug text-[#F3EEE1]">
+            Find a home that matches how you actually live.
+          </p>
+        </div>
+
+        <div className="w-full max-w-md bg-white/95 backdrop-blur-md border border-[#E4DCC9] rounded-md shadow-2xl p-8 space-y-6 my-6">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#0E1725]/80 border border-[#C6A15B]/50 rounded-sm">
-              <Building2 className="w-5 h-5 text-[#C6A15B]" />
-            </div>
+            <CasivaLogo className="w-10 h-10" />
             <div>
-              <h1 className="font-display text-xl text-[#F3EEE1] leading-none tracking-wide">EstateAgent AI</h1>
-              <p className="text-[9px] font-mono uppercase tracking-[0.15em] text-[#C6A15B] mt-1">Private Client Advisory</p>
+              <h1 className="font-display text-xl text-[#2B2B2B] leading-none tracking-[0.15em]">CASIVA</h1>
+              <p className="text-[9px] font-mono uppercase tracking-[0.15em] text-[#8A6C34] mt-1">Private Client Advisory</p>
             </div>
           </div>
 
-          <div className="flex gap-1 p-1 bg-[#070C14]/80 border border-[#2C3A50] rounded-sm font-mono">
+          <div className="flex gap-1 p-1 bg-[#FAF8F4]/80 border border-[#E4DCC9] rounded-sm font-mono">
             {[["login", "Login"], ["signup", "Sign Up"]].map(([mode, label]) => (
               <button
                 key={mode}
                 type="button"
                 onClick={() => switchAuthMode(mode)}
                 className={`flex-1 py-2 rounded-sm text-[11px] font-semibold uppercase tracking-wider transition ${
-                  activeView === mode ? "bg-[#C6A15B] text-[#0C1420]" : "text-[#D9D2BF] hover:bg-[#141F30]"
+                  activeView === mode ? "bg-[#C6A15B] text-[#1E1E1E]" : "text-[#5B5B5B] hover:bg-[#F1E9D8]"
                 }`}
               >
                 {label}
@@ -676,27 +764,27 @@ export default function App() {
           <form onSubmit={isSignup ? handleSignup : handleLogin} className="space-y-3.5">
             {isSignup && (
               <div className="relative">
-                <User className="w-4 h-4 text-[#7D8AA1] absolute left-3 top-1/2 -translate-y-1/2" />
+                <User className="w-4 h-4 text-[#8B8B8B] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input className={inputCls} type="text" placeholder="Full name" value={authForm.name}
                   onChange={setField("name")} autoComplete="name" disabled={authLoading} />
               </div>
             )}
 
             <div className="relative">
-              <Mail className="w-4 h-4 text-[#7D8AA1] absolute left-3 top-1/2 -translate-y-1/2" />
+              <Mail className="w-4 h-4 text-[#8B8B8B] absolute left-3 top-1/2 -translate-y-1/2" />
               <input className={inputCls} type="email" placeholder="Email address" value={authForm.email}
                 onChange={setField("email")} autoComplete="email" disabled={authLoading} />
             </div>
 
             <div className="relative">
-              <Lock className="w-4 h-4 text-[#7D8AA1] absolute left-3 top-1/2 -translate-y-1/2" />
+              <Lock className="w-4 h-4 text-[#8B8B8B] absolute left-3 top-1/2 -translate-y-1/2" />
               <input className={inputCls} type="password" placeholder="Password" value={authForm.password}
                 onChange={setField("password")} autoComplete={isSignup ? "new-password" : "current-password"} disabled={authLoading} />
             </div>
 
             {isSignup && (
               <div className="relative">
-                <Phone className="w-4 h-4 text-[#7D8AA1] absolute left-3 top-1/2 -translate-y-1/2" />
+                <Phone className="w-4 h-4 text-[#8B8B8B] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input className={inputCls} type="tel" placeholder="Phone number" value={authForm.phone_number}
                   onChange={setField("phone_number")} autoComplete="tel" disabled={authLoading} />
               </div>
@@ -713,8 +801,8 @@ export default function App() {
                       onClick={() => setAuthForm((f) => ({ ...f, role: val }))}
                       className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-sm text-[11px] font-mono font-semibold border transition ${
                         authForm.role === val
-                          ? "bg-[#C6A15B] text-[#0C1420] border-[#C6A15B]"
-                          : "bg-[#141F30] text-[#D9D2BF] border-[#2C3A50] hover:border-[#C6A15B]/40"
+                          ? "bg-[#C6A15B] text-[#1E1E1E] border-[#C6A15B]"
+                          : "bg-[#F1E9D8] text-[#5B5B5B] border-[#E4DCC9] hover:border-[#C6A15B]/40"
                       }`}
                     >
                       <Icon className="w-3.5 h-3.5" /> {label}
@@ -725,7 +813,7 @@ export default function App() {
             )}
 
             {authError && (
-              <div className="flex items-start gap-2 p-2.5 bg-[#553C3C]/25 border border-[#DA6B6B]/40 rounded-sm text-xs text-[#DA6B6B] font-body">
+              <div className="flex items-start gap-2 p-2.5 bg-[#FBEAEA]/25 border border-[#C24545]/40 rounded-sm text-xs text-[#C24545] font-body">
                 <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                 <span>{authError}</span>
               </div>
@@ -734,7 +822,7 @@ export default function App() {
             <button
               type="submit"
               disabled={authLoading}
-              className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-sm bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-40 text-[#0C1420] font-semibold text-xs transition shadow-lg font-mono uppercase tracking-wider"
+              className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-sm bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-40 text-[#1E1E1E] font-semibold text-xs transition shadow-lg font-mono uppercase tracking-wider"
             >
               {authLoading ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Please wait...</>
@@ -746,8 +834,8 @@ export default function App() {
             </button>
           </form>
 
-          <p className="text-center text-[11px] text-[#7D8AA1] font-body">
-            {isSignup ? "Already registered? " : "New to EstateAgent AI? "}
+          <p className="text-center text-[11px] text-[#8B8B8B] font-body">
+            {isSignup ? "Already registered? " : "New to CASIVA? "}
             <button
               type="button"
               onClick={() => switchAuthMode(isSignup ? "login" : "signup")}
@@ -764,20 +852,29 @@ export default function App() {
   // --- Broker dashboard --------------------------------------------------
   const renderBrokerDashboard = () => (
     <main className="flex-1 flex flex-col h-full relative z-10">
-      <header className="h-16 border-b border-[#C6A15B]/15 flex items-center justify-between px-6 bg-[#0E1725]/60 backdrop-blur-xl font-body">
+      <header className="h-16 border-b border-[#E4DCC9] flex items-center justify-between px-6 bg-white font-body">
         <div className="flex items-center gap-3">
-          <div className="p-1.5 bg-[#0E1725]/80 border border-[#C6A15B]/50 rounded-sm">
-            <Briefcase className="w-4 h-4 text-[#C6A15B]" />
+          <CasivaLogo className="w-7 h-7" />
+          <span className="font-display text-sm tracking-[0.15em] text-[#2B2B2B]">CASIVA</span>
+          <span className="w-px h-5 bg-[#E4DCC9]" />
+          <div className="flex items-center gap-1.5 text-[#8A6C34]">
+            <Briefcase className="w-4 h-4" />
           </div>
-          <h2 className="text-sm font-semibold tracking-wide text-[#D9D2BF] font-display">Broker Dashboard</h2>
+          <h2 className="text-sm font-semibold tracking-wide text-[#5B5B5B] font-display">Broker Dashboard</h2>
         </div>
         <div className="flex items-center gap-3">
-          <div className="text-[10px] font-mono bg-[#141F30] text-[#C6A15B] border border-[#C6A15B]/25 px-3 py-1 rounded-sm uppercase tracking-wider hidden sm:block">
+          <div className="text-[10px] font-mono bg-[#F1E9D8] text-[#C6A15B] border border-[#C6A15B]/25 px-3 py-1 rounded-sm uppercase tracking-wider hidden sm:block">
             {currentUser?.email}
           </div>
           <button
+            onClick={() => navigate(VIEW_PATHS.profile)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F1E9D8] hover:bg-[#E9DFC8] text-[#5B5B5B] border border-[#E4DCC9] rounded-sm text-xs font-mono transition"
+          >
+            <UserCircle className="w-3.5 h-3.5 text-[#C6A15B]" /> My Profile
+          </button>
+          <button
             onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#141F30] hover:bg-[#1A2536] text-[#D9D2BF] border border-[#2C3A50] rounded-sm text-xs font-mono transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F1E9D8] hover:bg-[#E9DFC8] text-[#5B5B5B] border border-[#E4DCC9] rounded-sm text-xs font-mono transition"
           >
             <LogOut className="w-3.5 h-3.5" /> Logout
           </button>
@@ -787,16 +884,16 @@ export default function App() {
       <div className="flex-1 overflow-y-auto p-8 font-body space-y-6 max-w-5xl mx-auto w-full">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h3 className="text-lg font-display text-[#F3EEE1]">Welcome back, {currentUser?.name || "Broker"}</h3>
-            <p className="text-xs text-[#8892A3] mt-1">Property listings linked to your broker account.</p>
+            <h3 className="text-lg font-display text-[#2B2B2B]">Welcome back, {currentUser?.name || "Broker"}</h3>
+            <p className="text-xs text-[#8B8B8B] mt-1">Property listings linked to your broker account.</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => { setListingError(""); setShowListingForm((v) => !v); }}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-xs font-mono transition border ${
                 showListingForm
-                  ? "bg-[#141F30] text-[#D9D2BF] border-[#2C3A50] hover:bg-[#1A2536]"
-                  : "bg-[#C6A15B] text-[#0C1420] border-[#C6A15B] hover:bg-[#D9B876] font-semibold uppercase tracking-wider"
+                  ? "bg-[#F1E9D8] text-[#5B5B5B] border-[#E4DCC9] hover:bg-[#E9DFC8]"
+                  : "bg-[#C6A15B] text-[#1E1E1E] border-[#C6A15B] hover:bg-[#D9B876] font-semibold uppercase tracking-wider"
               }`}
             >
               {showListingForm ? <><X className="w-3.5 h-3.5" /> Cancel</> : <><Plus className="w-3.5 h-3.5" /> Add Listing</>}
@@ -804,7 +901,7 @@ export default function App() {
             <button
               onClick={fetchBrokerListings}
               disabled={brokerLoading}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[#141F30] hover:bg-[#1A2536] text-[#D9D2BF] border border-[#2C3A50] rounded-sm text-xs font-mono transition disabled:opacity-50"
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#F1E9D8] hover:bg-[#E9DFC8] text-[#5B5B5B] border border-[#E4DCC9] rounded-sm text-xs font-mono transition disabled:opacity-50"
             >
               <RotateCcw className={`w-3 h-3 text-[#C6A15B] ${brokerLoading ? "animate-spin" : ""}`} /> Refresh
             </button>
@@ -814,14 +911,36 @@ export default function App() {
         {showListingForm && (
           <form
             onSubmit={handleCreateListing}
-            className="bg-[#0E1725]/80 border border-[#C6A15B]/30 rounded-md p-5 space-y-4 shadow-2xl"
+            className="bg-[#FFFFFF]/80 border border-[#C6A15B]/30 rounded-md p-5 space-y-4 shadow-2xl"
           >
             <h4 className="text-xs font-mono uppercase tracking-wider text-[#C6A15B] font-semibold">New Property Listing</h4>
 
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#8B8B8B]">Listing For *</span>
+              <div className="grid grid-cols-2 gap-2">
+                {[["Sale", "For Sale", Tag], ["Rent", "For Rent", KeyRound]].map(([val, label, Icon]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setListingForm((f) => ({ ...f, listing_type: val }))}
+                    disabled={listingSubmitting}
+                    className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-sm text-[11px] font-mono font-semibold border transition disabled:opacity-50 ${
+                      listingForm.listing_type === val
+                        ? "bg-[#C6A15B] text-[#1E1E1E] border-[#C6A15B]"
+                        : "bg-[#FAF8F4] text-[#5B5B5B] border-[#E4DCC9] hover:border-[#C6A15B]/40"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" /> {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {(() => {
               const fieldCls =
-                "w-full bg-[#0A121D]/90 border border-[#2C3A50] focus:border-[#C6A15B] rounded-md py-2 px-3 text-sm text-[#EDE7D9] placeholder-[#7D8AA1] focus:outline-none focus:ring-2 focus:ring-[#C6A15B]/30 transition disabled:opacity-50";
-              const labelCls = "text-[10px] font-mono uppercase tracking-wider text-[#7D8AA1]";
+                "w-full bg-[#FAF8F4]/90 border border-[#E4DCC9] focus:border-[#C6A15B] rounded-md py-2 px-3 text-sm text-[#2B2B2B] placeholder-[#8B8B8B] focus:outline-none focus:ring-2 focus:ring-[#C6A15B]/30 transition disabled:opacity-50";
+              const labelCls = "text-[10px] font-mono uppercase tracking-wider text-[#8B8B8B]";
+              const isRent = listingForm.listing_type === "Rent";
               return (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="space-y-1 sm:col-span-2">
@@ -837,9 +956,15 @@ export default function App() {
                     <input className={fieldCls} value={listingForm.location} onChange={setListingField("location")} placeholder="Vijay Nagar" disabled={listingSubmitting} />
                   </label>
                   <label className="space-y-1">
-                    <span className={labelCls}>Price (INR) *</span>
-                    <input className={fieldCls} type="number" min="0" value={listingForm.price_in_inr} onChange={setListingField("price_in_inr")} placeholder="9500000" disabled={listingSubmitting} />
+                    <span className={labelCls}>{isRent ? "Monthly Rent (INR) *" : "Price (INR) *"}</span>
+                    <input className={fieldCls} type="number" min="0" value={listingForm.price_in_inr} onChange={setListingField("price_in_inr")} placeholder={isRent ? "18000" : "9500000"} disabled={listingSubmitting} />
                   </label>
+                  {isRent && (
+                    <label className="space-y-1">
+                      <span className={labelCls}>Security Deposit (INR)</span>
+                      <input className={fieldCls} type="number" min="0" value={listingForm.security_deposit} onChange={setListingField("security_deposit")} placeholder="50000" disabled={listingSubmitting} />
+                    </label>
+                  )}
                   <label className="space-y-1">
                     <span className={labelCls}>BHK</span>
                     <input className={fieldCls} type="number" min="0" value={listingForm.bhk} onChange={setListingField("bhk")} placeholder="3 (leave blank for plots)" disabled={listingSubmitting} />
@@ -879,18 +1004,18 @@ export default function App() {
             })()}
 
             <div className="space-y-2">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#7D8AA1]">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#8B8B8B]">
                 Property Images * ({listingImages.length}/10)
               </span>
-              <label className="flex flex-col items-center justify-center gap-1 border-2 border-dashed border-[#2C3A50] hover:border-[#C6A15B]/50 rounded-md p-5 text-center bg-[#070C14]/60 transition cursor-pointer">
+              <label className="flex flex-col items-center justify-center gap-1 border-2 border-dashed border-[#E4DCC9] hover:border-[#C6A15B]/50 rounded-md p-5 text-center bg-[#FAF8F4]/60 transition cursor-pointer">
                 <input type="file" multiple accept="image/*" className="hidden" onChange={handleListingImageSelect} disabled={listingSubmitting} />
                 <Upload className="w-6 h-6 text-[#C6A15B]" />
-                <span className="text-xs text-[#D9D2BF] font-medium">Click to add photos (JPG, PNG, WebP, GIF)</span>
+                <span className="text-xs text-[#5B5B5B] font-medium">Click to add photos (JPG, PNG, WebP, GIF)</span>
               </label>
               {listingImages.length > 0 && (
                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                   {listingImages.map((file, idx) => (
-                    <div key={idx} className="relative group rounded-md overflow-hidden border border-[#2C3A50] bg-[#070C14] h-20">
+                    <div key={idx} className="relative group rounded-md overflow-hidden border border-[#E4DCC9] bg-[#FAF8F4] h-20">
                       <img src={URL.createObjectURL(file)} alt={file.name} className="w-full h-full object-cover" />
                       <button
                         type="button"
@@ -908,7 +1033,7 @@ export default function App() {
             </div>
 
             {listingError && (
-              <div className="flex items-start gap-2 p-2.5 bg-[#553C3C]/25 border border-[#DA6B6B]/40 rounded-sm text-xs text-[#DA6B6B] font-body">
+              <div className="flex items-start gap-2 p-2.5 bg-[#FBEAEA]/25 border border-[#C24545]/40 rounded-sm text-xs text-[#C24545] font-body">
                 <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                 <span>{listingError}</span>
               </div>
@@ -918,7 +1043,7 @@ export default function App() {
               <button
                 type="submit"
                 disabled={listingSubmitting}
-                className="flex items-center justify-center gap-2 px-4 py-2 rounded-sm bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-40 text-[#0C1420] font-semibold text-xs transition font-mono uppercase tracking-wider"
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-sm bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-40 text-[#1E1E1E] font-semibold text-xs transition font-mono uppercase tracking-wider"
               >
                 {listingSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : <><Plus className="w-4 h-4" /> Create Listing</>}
               </button>
@@ -926,7 +1051,7 @@ export default function App() {
                 type="button"
                 onClick={() => { setShowListingForm(false); setListingError(""); }}
                 disabled={listingSubmitting}
-                className="px-4 py-2 rounded-sm bg-[#141F30] hover:bg-[#1A2536] text-[#D9D2BF] border border-[#2C3A50] text-xs font-mono transition disabled:opacity-40"
+                className="px-4 py-2 rounded-sm bg-[#F1E9D8] hover:bg-[#E9DFC8] text-[#5B5B5B] border border-[#E4DCC9] text-xs font-mono transition disabled:opacity-40"
               >
                 Cancel
               </button>
@@ -935,19 +1060,19 @@ export default function App() {
         )}
 
         {brokerLoading && (
-          <div className="flex items-center gap-2 text-xs text-[#7D8AA1] font-mono">
+          <div className="flex items-center gap-2 text-xs text-[#8B8B8B] font-mono">
             <Loader2 className="w-4 h-4 animate-spin text-[#C6A15B]" /> Loading your listings...
           </div>
         )}
 
         {brokerError && (
-          <div className="flex items-start gap-2 p-3 bg-[#553C3C]/25 border border-[#DA6B6B]/40 text-[#DA6B6B] text-xs rounded-sm font-mono">
+          <div className="flex items-start gap-2 p-3 bg-[#FBEAEA]/25 border border-[#C24545]/40 text-[#C24545] text-xs rounded-sm font-mono">
             <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" /> {brokerError}
           </div>
         )}
 
         {!brokerLoading && brokerListings && brokerListings.length === 0 && (
-          <div className="p-8 bg-[#0E1725]/80 border border-[#2C3A50] rounded-md text-center text-xs text-[#8892A3] font-body">
+          <div className="p-8 bg-[#FFFFFF]/80 border border-[#E4DCC9] rounded-md text-center text-xs text-[#8B8B8B] font-body">
             No property listings are linked to your account yet.
           </div>
         )}
@@ -955,7 +1080,7 @@ export default function App() {
         {brokerListings && brokerListings.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {brokerListings.map((p) => (
-              <div key={p.id} className="bg-[#0E1725]/80 border border-[#2C3A50] rounded-md p-4 space-y-2 shadow-xl">
+              <div key={p.id} className="bg-[#FFFFFF]/80 border border-[#E4DCC9] rounded-md p-4 space-y-2 shadow-xl">
                 {Array.isArray(p.image_urls) && p.image_urls.length > 0 && (
                   <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1">
                     {p.image_urls.map((url, i) => (
@@ -965,29 +1090,38 @@ export default function App() {
                         alt={`${p.property_name} photo ${i + 1}`}
                         loading="lazy"
                         onClick={() => setLightboxSrc(`${MEDIA_BASE}${url}`)}
-                        className="h-24 w-32 flex-shrink-0 object-cover rounded-sm border border-[#2C3A50] bg-[#070C14] cursor-zoom-in hover:brightness-110 transition"
+                        className="h-24 w-32 flex-shrink-0 object-cover rounded-sm border border-[#E4DCC9] bg-[#FAF8F4] cursor-zoom-in hover:brightness-110 transition"
                       />
                     ))}
                   </div>
                 )}
                 <div className="flex items-start justify-between gap-2">
-                  <h4 className="text-sm font-display text-[#F3EEE1]">{p.property_name}</h4>
-                  {p.availability_status && (
-                    <span className="text-[9px] font-mono uppercase tracking-wider bg-[#3F5142]/40 text-[#9FBF9A] border border-[#6E8B6E]/40 px-2 py-0.5 rounded-sm flex-shrink-0">
-                      {p.availability_status}
+                  <h4 className="text-sm font-display text-[#2B2B2B]">{p.property_name}</h4>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className={`text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-sm ${
+                      p.listing_type === "Rent"
+                        ? "bg-[#F1E9D8] text-[#8A6C34] border border-[#C6A15B]/40"
+                        : "bg-[#E4E9F5]/60 text-[#3B5998] border border-[#C3CCE8]"
+                    }`}>
+                      {p.listing_type === "Rent" ? "For Rent" : "For Sale"}
                     </span>
-                  )}
+                    {p.availability_status && (
+                      <span className="text-[9px] font-mono uppercase tracking-wider bg-[#D9EAD3]/40 text-[#4B7A46] border border-[#A9C9A0]/40 px-2 py-0.5 rounded-sm">
+                        {p.availability_status}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <p className="text-[11px] text-[#8892A3] font-mono flex items-center gap-1.5">
+                <p className="text-[11px] text-[#8B8B8B] font-mono flex items-center gap-1.5">
                   <MapPin className="w-3 h-3 text-[#C6A15B]" /> {p.location}{p.city ? `, ${p.city}` : ""}
                 </p>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono text-[#C9BFA6] pt-2 border-t border-[#2C3A50]/60">
-                  <span className="text-[#F3EEE1] font-semibold">₹ {Number(p.price_in_inr || 0).toLocaleString("en-IN")}</span>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono text-[#6B6B6B] pt-2 border-t border-[#E4DCC9]/60">
+                  <span className="text-[#2B2B2B] font-semibold">{formatPrice(p)}</span>
                   {p.bhk != null && (
-                    <span className="flex items-center gap-1"><BedDouble className="w-3 h-3 text-[#7D9471]" /> {p.bhk} BHK</span>
+                    <span className="flex items-center gap-1"><BedDouble className="w-3 h-3 text-[#6B9A5E]" /> {p.bhk} BHK</span>
                   )}
                   {p.area_sqft != null && <span>{p.area_sqft} {p.area_unit || "sqft"}</span>}
-                  {p.property_type && <span className="text-[#7D8AA1]">{p.property_type}</span>}
+                  {p.property_type && <span className="text-[#8B8B8B]">{p.property_type}</span>}
                 </div>
               </div>
             ))}
@@ -997,121 +1131,137 @@ export default function App() {
         {/* Enquiries: users who tapped "Interested" on this broker's listings */}
         <div className="space-y-3 pt-2">
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-display text-[#F3EEE1] flex items-center gap-2">
+            <h3 className="text-lg font-display text-[#2B2B2B] flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-[#C6A15B]" /> Enquiries
             </h3>
             {brokerLeads && brokerLeads.length > 0 && (
-              <span className="text-[10px] font-mono bg-[#C6A15B] text-[#0C1420] px-2 py-0.5 rounded-sm font-semibold">
+              <span className="text-[10px] font-mono bg-[#C6A15B] text-[#1E1E1E] px-2 py-0.5 rounded-sm font-semibold">
                 {brokerLeads.length}
               </span>
             )}
             <button
               onClick={fetchBrokerLeads}
-              className="ml-auto flex items-center gap-1.5 px-2.5 py-1 bg-[#141F30] hover:bg-[#1A2536] text-[#D9D2BF] border border-[#2C3A50] rounded-sm text-[10px] font-mono transition"
+              className="ml-auto flex items-center gap-1.5 px-2.5 py-1 bg-[#F1E9D8] hover:bg-[#E9DFC8] text-[#5B5B5B] border border-[#E4DCC9] rounded-sm text-[10px] font-mono transition"
             >
               <RotateCcw className="w-3 h-3 text-[#C6A15B]" /> Refresh
             </button>
           </div>
 
           {brokerLeads === null ? (
-            <p className="text-xs text-[#7D8AA1] font-mono">Loading enquiries...</p>
+            <p className="text-xs text-[#8B8B8B] font-mono">Loading enquiries...</p>
           ) : brokerLeads.length === 0 ? (
-            <div className="p-6 bg-[#0E1725]/80 border border-[#2C3A50] rounded-md text-center text-xs text-[#8892A3] font-body">
+            <div className="p-6 bg-[#FFFFFF]/80 border border-[#E4DCC9] rounded-md text-center text-xs text-[#8B8B8B] font-body">
               No one has expressed interest in your listings yet.
             </div>
           ) : (
             <div className="space-y-2">
               {brokerLeads.map((lead) => (
-                <div key={lead.interest_id} className="bg-[#0E1725]/80 border border-[#2C3A50] rounded-md p-3.5 space-y-1.5 shadow-lg">
+                <div key={lead.interest_id} className="bg-[#FFFFFF]/80 border border-[#E4DCC9] rounded-md p-3.5 space-y-1.5 shadow-lg">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm text-[#F3EEE1] font-medium">
-                      {lead.user?.name || "A user"} <span className="text-[#7D8AA1] font-normal">is interested in</span> {lead.property_name}
+                    <p className="text-sm text-[#2B2B2B] font-medium">
+                      {lead.user?.name || "A user"} <span className="text-[#8B8B8B] font-normal">is interested in</span> {lead.property_name}
                     </p>
-                    <span className="text-[9px] font-mono text-[#7D8AA1] flex-shrink-0">
+                    <span className="text-[9px] font-mono text-[#8B8B8B] flex-shrink-0">
                       {lead.created_at ? new Date(lead.created_at).toLocaleDateString() : ""}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-mono text-[#C9BFA6]">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-mono text-[#6B6B6B]">
                     {lead.user?.phone && <span>📞 {lead.user.phone}</span>}
                     {lead.user?.email && <span>✉️ {lead.user.email}</span>}
-                    <span className="text-[#7D8AA1]">{lead.location}{lead.city ? `, ${lead.city}` : ""}</span>
+                    <span className="text-[#8B8B8B]">{lead.location}{lead.city ? `, ${lead.city}` : ""}</span>
                   </div>
-                  {lead.message && <p className="text-[11px] text-[#C9BFA6] italic border-l-2 border-[#C6A15B]/40 pl-2">{`“${lead.message}”`}</p>}
+                  {lead.message && <p className="text-[11px] text-[#6B6B6B] italic border-l-2 border-[#C6A15B]/40 pl-2">{`“${lead.message}”`}</p>}
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+      <BrokerAssistant token={token} />
     </main>
   );
 
   return (
-    <div className="flex h-screen w-full text-[#EDE7D9] antialiased overflow-hidden font-sans relative">
+    <div className="flex h-screen w-full bg-[#FAF8F4] text-[#2B2B2B] antialiased overflow-hidden font-sans relative">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
         .font-display { font-family: 'Fraunces', serif; font-optical-sizing: auto; }
         .font-body { font-family: 'Inter', sans-serif; }
         .font-mono { font-family: 'IBM Plex Mono', monospace; }
-        .blueprint-grid {
-          background-image:
-            linear-gradient(rgba(198,161,91,0.06) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(198,161,91,0.06) 1px, transparent 1px);
-          background-size: 28px 28px;
-        }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
-      {/* BACKDROP */}
-      <div className="absolute inset-0 z-0">
-        <img src={HERO_IMAGE} alt="" className="w-full h-full object-cover brightness-[0.28] scale-105" />
-        <div className="absolute inset-0 bg-[#0C1420]/88" />
-        <div className="absolute inset-0 blueprint-grid" />
-      </div>
+      {/*
+        Rendered purely off the URL (activeView), not off auth state, so that
+        browser back/forward landing on /login or /signup after the user is
+        already authenticated (per the required history breadcrumb) still
+        shows something coherent instead of a blank screen. Unauthenticated
+        access to a protected path is handled by the route-guard effect
+        above, which redirects to /login before this ever renders.
+      */}
+      {(activeView === "login" || activeView === "signup") && renderAuthScreen()}
 
-      {/* AUTH GATE: nothing below is reachable until logged in */}
-      {!isAuthed && renderAuthScreen()}
+      {isBroker && activeView === "broker-dashboard" && renderBrokerDashboard()}
 
-      {isBroker && renderBrokerDashboard()}
+      {isAuthed && !isBroker && activeView === "property-dashboard" && (
+        <PropertyDashboard
+          token={token}
+          currentUser={currentUser}
+          onAskAI={() => navigate(VIEW_PATHS.chat)}
+          onProfile={() => navigate(VIEW_PATHS.profile)}
+          onLogout={handleLogout}
+        />
+      )}
 
-      {isAuthed && !isBroker && (
+      {isAuthed && activeView === "profile" && (
+        <MyProfile
+          token={token}
+          currentUser={currentUser}
+          onBack={() => navigate(isBroker ? VIEW_PATHS["broker-dashboard"] : VIEW_PATHS["property-dashboard"])}
+          onLogout={handleLogout}
+          onUserUpdated={(patch) => setCurrentUser((u) => (u ? { ...u, ...patch } : u))}
+        />
+      )}
+
+      {isAuthed && !isBroker && (activeView === "chat" || activeView === "verify") && (
       <>
       {/* SIDEBAR WITH CHAT HISTORY & NEW CHAT */}
-      <aside className="w-80 bg-[#0E1725]/90 backdrop-blur-xl border-r border-[#C6A15B]/15 flex flex-col justify-between p-5 hidden md:flex z-10 shadow-2xl font-body">
+      <aside className="w-80 bg-white border-r border-[#E4DCC9] flex flex-col justify-between p-5 hidden md:flex z-10 shadow-sm font-body">
         <div className="space-y-5 flex-1 flex flex-col min-h-0">
-          <div className="relative overflow-hidden rounded-md border border-[#C6A15B]/25 flex-shrink-0">
-            <img src={SIDEBAR_IMAGE} alt="" className="w-full h-20 object-cover brightness-[0.5]" />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0E1725] via-[#0E1725]/30 to-transparent" />
-            <div className="absolute bottom-0 left-0 right-0 flex items-center gap-2.5 p-2.5">
-              <div className="p-1.5 bg-[#0E1725]/80 border border-[#C6A15B]/50 rounded-sm">
-                <Building2 className="w-4 h-4 text-[#C6A15B]" />
-              </div>
-              <div>
-                <h1 className="font-display text-base leading-none tracking-wide text-[#F3EEE1]">EstateAgent AI</h1>
-                <p className="text-[9px] font-mono uppercase tracking-[0.15em] text-[#C6A15B] mt-1">Private Client Advisory</p>
-              </div>
+          <div className="flex items-center gap-2.5 pb-4 border-b border-[#E4DCC9] flex-shrink-0">
+            <CasivaLogo className="w-8 h-8" />
+            <div>
+              <h1 className="font-display text-base leading-none tracking-[0.15em] text-[#2B2B2B]">CASIVA</h1>
+              <p className="text-[9px] font-mono uppercase tracking-[0.15em] text-[#8A6C34] mt-1">Private Client Advisory</p>
             </div>
           </div>
 
           <button
-            onClick={() => { setActiveView("chat"); createNewChat(); }}
-            className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-sm bg-[#C6A15B] hover:bg-[#D9B876] text-[#0C1420] font-semibold text-xs transition shadow-lg font-mono uppercase tracking-wider flex-shrink-0"
+            onClick={() => { navigate(VIEW_PATHS.chat); createNewChat(); }}
+            className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-sm bg-[#C6A15B] hover:bg-[#D9B876] text-[#1E1E1E] font-semibold text-xs transition shadow-lg font-mono uppercase tracking-wider flex-shrink-0"
           >
             <Plus className="w-4 h-4" /> New Chat
           </button>
 
+          <button
+            onClick={() => navigate(VIEW_PATHS["property-dashboard"])}
+            className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-sm bg-[#F1E9D8] hover:bg-[#E9DFC8] text-[#5B5B5B] font-medium text-xs transition border border-[#E4DCC9] font-mono uppercase tracking-wider flex-shrink-0"
+          >
+            <Home className="w-3.5 h-3.5 text-[#8A6C34]" /> Browse Properties
+          </button>
+
           {/* Chat History List */}
           <div className="flex-1 overflow-y-auto space-y-1.5 no-scrollbar pr-1">
-            <p className="text-[10px] font-mono font-semibold uppercase tracking-[0.15em] text-[#7D8AA1] px-1 pt-1 pb-1">Chat History</p>
+            <p className="text-[10px] font-mono font-semibold uppercase tracking-[0.15em] text-[#8B8B8B] px-1 pt-1 pb-1">Chat History</p>
             {sessions.map((sess) => (
               <div
                 key={sess.id}
-                onClick={() => { setActiveView("chat"); switchSession(sess.id); }}
+                onClick={() => { navigate(VIEW_PATHS.chat); switchSession(sess.id); }}
                 className={`w-full text-left p-2.5 rounded-sm border transition text-xs flex items-center justify-between group cursor-pointer ${
                   activeView === "chat" && activeSessionId === sess.id
-                    ? "bg-[#1A2536] border-[#C6A15B]/50 text-[#F3EEE1]"
-                    : "bg-[#141F30]/50 hover:bg-[#1A2536]/80 border-[#2C3A50] text-[#D9D2BF]"
+                    ? "bg-[#E9DFC8] border-[#C6A15B]/50 text-[#2B2B2B]"
+                    : "bg-[#F1E9D8]/50 hover:bg-[#E9DFC8]/80 border-[#E4DCC9] text-[#5B5B5B]"
                 }`}
               >
                 <div className="flex items-center gap-2 overflow-hidden">
@@ -1119,7 +1269,7 @@ export default function App() {
                   <span className="truncate">{sess.title}</span>
                 </div>
                 {sessions.length > 1 && (
-                  <button onClick={(e) => deleteSession(e, sess.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400 text-[#7D8AA1] transition p-1" title="Delete Chat">
+                  <button onClick={(e) => deleteSession(e, sess.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400 text-[#8B8B8B] transition p-1" title="Delete Chat">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 )}
@@ -1127,30 +1277,30 @@ export default function App() {
             ))}
           </div>
 
-          <div className="p-3 bg-[#0A121D]/80 rounded-sm border border-[#2C3A50] text-xs space-y-1.5 flex-shrink-0">
-            <div className="flex items-center gap-1.5 text-[#7D9471] font-semibold font-mono text-[11px] uppercase tracking-wider">
+          <div className="p-3 bg-[#FAF8F4]/80 rounded-sm border border-[#E4DCC9] text-xs space-y-1.5 flex-shrink-0">
+            <div className="flex items-center gap-1.5 text-[#6B9A5E] font-semibold font-mono text-[11px] uppercase tracking-wider">
               <ShieldCheck className="w-3.5 h-3.5" /> Multi-Agent Engine
             </div>
-            <p className="text-[10px] text-[#8892A3] leading-relaxed">
-              LangGraph + Gemini 3.6-Flash orchestrating Postgres &amp; Places365 Vision Verification.
+            <p className="text-[10px] text-[#8B8B8B] leading-relaxed">
+              LangGraph + Gemini 3.6-Flash orchestrating Postgres &amp; Gemini Vision Verification.
             </p>
           </div>
         </div>
 
         <div className="pt-3 border-t border-[#C6A15B]/15 flex-shrink-0 space-y-2">
-          <div className="flex items-center gap-2 px-1 text-[10px] font-mono text-[#7D8AA1] truncate">
+          <div className="flex items-center gap-2 px-1 text-[10px] font-mono text-[#8B8B8B] truncate">
             <User className="w-3 h-3 text-[#C6A15B] flex-shrink-0" />
             <span className="truncate">Signed in as {currentUser?.email || currentUser?.name}</span>
           </div>
           <button
-            onClick={() => { setActiveView("chat"); createNewChat(); }}
-            className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-sm bg-[#141F30]/90 hover:bg-[#1A2536] text-[#D9D2BF] font-medium text-xs transition border border-[#2C3A50] hover:border-[#C6A15B]/40 font-mono uppercase tracking-wider"
+            onClick={() => { navigate(VIEW_PATHS.chat); createNewChat(); }}
+            className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-sm bg-[#F1E9D8]/90 hover:bg-[#E9DFC8] text-[#5B5B5B] font-medium text-xs transition border border-[#E4DCC9] hover:border-[#C6A15B]/40 font-mono uppercase tracking-wider"
           >
             <RotateCcw className="w-3 h-3 text-[#C6A15B]" /> Clear Session
           </button>
           <button
             onClick={handleLogout}
-            className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-sm bg-[#553C3C]/30 hover:bg-[#553C3C]/50 text-[#DA9A9A] font-medium text-xs transition border border-[#A16B6B]/30 hover:border-[#DA6B6B]/50 font-mono uppercase tracking-wider"
+            className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-sm bg-[#FBEAEA]/30 hover:bg-[#FBEAEA]/50 text-[#C24545] font-medium text-xs transition border border-[#C24545]/30 hover:border-[#C24545]/50 font-mono uppercase tracking-wider"
           >
             <LogOut className="w-3 h-3" /> Logout
           </button>
@@ -1159,36 +1309,39 @@ export default function App() {
 
       {/* MAIN WORKSPACE VIEW CONTAINER */}
       <main className="flex-1 flex flex-col h-full relative z-10">
-        <header className="h-16 border-b border-[#C6A15B]/15 flex items-center justify-between px-6 bg-[#0E1725]/60 backdrop-blur-xl font-body">
+        <header className="h-16 border-b border-[#E4DCC9] flex items-center justify-between px-6 bg-white font-body">
           <div className="flex items-center gap-3">
-            <span className="w-2 h-2 rounded-full bg-[#7D9471] animate-pulse"></span>
-            <h2 className="text-sm font-semibold tracking-wide text-[#D9D2BF] font-display">
+            <CasivaLogo className="w-7 h-7 hidden md:block" />
+            <span className="font-display text-sm tracking-[0.15em] text-[#2B2B2B] hidden md:block">CASIVA</span>
+            <span className="w-px h-5 bg-[#E4DCC9] hidden md:block" />
+            <span className="w-2 h-2 rounded-full bg-[#6B9A5E] animate-pulse"></span>
+            <h2 className="text-sm font-semibold tracking-wide text-[#5B5B5B] font-display">
               {activeView === "chat" ? "AI Real Estate Workspace" : "Property Room Verification Engine"}
             </h2>
           </div>
           <div className="flex items-center gap-3">
             {activeView === "chat" ? (
               <button
-                onClick={() => setActiveView("verify")}
+                onClick={() => navigate(VIEW_PATHS.verify)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-[#C6A15B]/20 hover:bg-[#C6A15B]/30 text-[#C6A15B] border border-[#C6A15B]/50 rounded-sm text-xs font-mono transition"
               >
                 <Sparkles className="w-3.5 h-3.5" /> 🏠 Verify Property
               </button>
             ) : (
               <button
-                onClick={() => setActiveView("chat")}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#141F30] hover:bg-[#1A2536] text-[#D9D2BF] border border-[#2C3A50] rounded-sm text-xs font-mono transition"
+                onClick={() => navigate(VIEW_PATHS.chat)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F1E9D8] hover:bg-[#E9DFC8] text-[#5B5B5B] border border-[#E4DCC9] rounded-sm text-xs font-mono transition"
               >
                 <ChevronRight className="w-3.5 h-3.5 rotate-180" /> Back to Chat
               </button>
             )}
-            <div className="text-[10px] font-mono bg-[#141F30] text-[#C6A15B] border border-[#C6A15B]/25 px-3 py-1 rounded-sm uppercase tracking-wider hidden lg:block">
-              {activeView === "chat" ? `Session · ${activeSessionId || "Init"}` : "Places365 Vision Model"}
+            <div className="text-[10px] font-mono bg-[#F1E9D8] text-[#C6A15B] border border-[#C6A15B]/25 px-3 py-1 rounded-sm uppercase tracking-wider hidden lg:block">
+              {activeView === "chat" ? `Session · ${activeSessionId || "Init"}` : "Gemini 3.6 Flash Vision"}
             </div>
             <button
               onClick={handleLogout}
               title="Logout"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#553C3C]/30 hover:bg-[#553C3C]/50 text-[#DA9A9A] border border-[#A16B6B]/30 hover:border-[#DA6B6B]/50 rounded-sm text-xs font-mono transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FBEAEA]/30 hover:bg-[#FBEAEA]/50 text-[#C24545] border border-[#C24545]/30 hover:border-[#C24545]/50 rounded-sm text-xs font-mono transition"
             >
               <LogOut className="w-3.5 h-3.5" /> Logout
             </button>
@@ -1200,26 +1353,26 @@ export default function App() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6 font-body">
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex items-start gap-3.5 max-w-3xl ${msg.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"}`}>
-                  <div className={`p-2 rounded-full flex-shrink-0 shadow-lg border ${msg.role === "user" ? "bg-[#C6A15B] text-[#0C1420] border-[#C6A15B]" : "bg-[#0E1725] text-[#C6A15B] border-[#C6A15B]/40"}`}>
+                  <div className={`p-2 rounded-full flex-shrink-0 shadow-lg border ${msg.role === "user" ? "bg-[#C6A15B] text-[#1E1E1E] border-[#C6A15B]" : "bg-[#FFFFFF] text-[#C6A15B] border-[#C6A15B]/40"}`}>
                     {msg.role === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                   </div>
 
-                  <div className={`relative rounded-md px-5 py-3.5 shadow-xl text-sm leading-relaxed space-y-2.5 ${msg.role === "user" ? "bg-[#C6A15B] text-[#0C1420] rounded-tr-none shadow-black/30" : "bg-[#0E1725]/90 border border-[#2C3A50] text-[#D9D2BF] rounded-tl-none shadow-black/40 pl-6"}`}>
-                    {msg.role === "assistant" && <span className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-[#C6A15B] to-[#7D9471] rounded-l-md" />}
+                  <div className={`relative rounded-md px-5 py-3.5 shadow-xl text-sm leading-relaxed space-y-2.5 ${msg.role === "user" ? "bg-[#C6A15B] text-[#1E1E1E] rounded-tr-none shadow-black/30" : "bg-[#FFFFFF]/90 border border-[#E4DCC9] text-[#5B5B5B] rounded-tl-none shadow-black/40 pl-6"}`}>
+                    {msg.role === "assistant" && <span className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-[#C6A15B] to-[#6B9A5E] rounded-l-md" />}
 
                     {msg.steps && msg.steps.length > 0 && (
-                      <div className="mb-3 p-2.5 rounded-sm bg-[#070C14] border border-[#2C3A50] text-xs font-mono text-[#9CC4E0] space-y-1.5 shadow-inner">
-                        <div className="flex items-center gap-1.5 text-[10px] text-[#C6A15B] uppercase tracking-wider font-semibold border-b border-[#2C3A50]/60 pb-1 mb-1">
+                      <div className="mb-3 p-2.5 rounded-sm bg-[#FAF8F4] border border-[#E4DCC9] text-xs font-mono text-[#3E7CA6] space-y-1.5 shadow-inner">
+                        <div className="flex items-center gap-1.5 text-[10px] text-[#C6A15B] uppercase tracking-wider font-semibold border-b border-[#E4DCC9]/60 pb-1 mb-1">
                           <Cpu className="w-3 h-3 animate-spin" /> LangGraph Telemetry Trace
                         </div>
                         {msg.steps.map((step, sIdx) => (
                           <div key={sIdx} className="flex items-center gap-2 text-[11px]">
-                            <CheckCircle2 className="w-3 h-3 text-[#7D9471] flex-shrink-0" />
-                            <span className="text-[#C9BFA6]">{step}</span>
+                            <CheckCircle2 className="w-3 h-3 text-[#6B9A5E] flex-shrink-0" />
+                            <span className="text-[#6B6B6B]">{step}</span>
                           </div>
                         ))}
                         {loading && idx === messages.length - 1 && (
-                          <div className="flex items-center gap-2 text-[11px] text-[#7D8AA1] italic pt-0.5">
+                          <div className="flex items-center gap-2 text-[11px] text-[#8B8B8B] italic pt-0.5">
                             <Loader2 className="w-3 h-3 animate-spin text-[#C6A15B]" />
                             <span>Processing next graph node...</span>
                           </div>
@@ -1231,66 +1384,75 @@ export default function App() {
 
                     {msg.role === "assistant" && Array.isArray(msg.properties) && msg.properties.length > 0 && (
                       <div className="mb-3 space-y-2">
-                        <div className="flex items-center gap-1.5 text-[11px] text-[#9FBF9A] uppercase tracking-wider font-mono font-semibold pb-1 border-b border-[#3F5142]/40">
-                          <ShieldCheck className="w-3.5 h-3.5" /> EstateAgent AI Listings ({msg.properties.length})
+                        <div className="flex items-center gap-1.5 text-[11px] text-[#4B7A46] uppercase tracking-wider font-mono font-semibold pb-1 border-b border-[#D9EAD3]/40">
+                          <ShieldCheck className="w-3.5 h-3.5" /> CASIVA Listings ({msg.properties.length})
                         </div>
                         {msg.properties.map((p) => {
                           const st = interestState[p.id] || {};
                           return (
-                            <div key={p.id} className="rounded-sm border border-[#3F5142]/50 bg-[#0B1510]/70 p-3 space-y-2">
+                            <div key={p.id} className="rounded-sm border border-[#D9EAD3]/50 bg-[#F1F7EF]/70 p-3 space-y-2">
                               {Array.isArray(p.image_urls) && p.image_urls.length > 0 && (
                                 <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
                                   {p.image_urls.map((url, i) => (
                                     <img key={i} src={`${MEDIA_BASE}${url}`} alt={`${p.property_name} ${i + 1}`} loading="lazy"
                                       onClick={() => setLightboxSrc(`${MEDIA_BASE}${url}`)}
-                                      className="h-20 w-28 flex-shrink-0 object-cover rounded-sm border border-[#2C3A50] bg-[#070C14] cursor-zoom-in hover:brightness-110 transition" />
+                                      className="h-20 w-28 flex-shrink-0 object-cover rounded-sm border border-[#E4DCC9] bg-[#FAF8F4] cursor-zoom-in hover:brightness-110 transition" />
                                   ))}
                                 </div>
                               )}
                               <div className="flex items-start justify-between gap-2">
                                 <div>
-                                  <p className="text-sm font-display text-[#F3EEE1]">{p.property_name}</p>
-                                  <p className="text-[11px] text-[#8892A3] font-mono flex items-center gap-1"><MapPin className="w-3 h-3 text-[#C6A15B]" /> {p.location}{p.city ? `, ${p.city}` : ""}</p>
+                                  <p className="text-sm font-display text-[#2B2B2B]">{p.property_name}</p>
+                                  <p className="text-[11px] text-[#8B8B8B] font-mono flex items-center gap-1"><MapPin className="w-3 h-3 text-[#C6A15B]" /> {p.location}{p.city ? `, ${p.city}` : ""}</p>
                                 </div>
-                                {p.availability_status && (
-                                  <span className="text-[9px] font-mono uppercase tracking-wider bg-[#3F5142]/40 text-[#9FBF9A] border border-[#6E8B6E]/40 px-2 py-0.5 rounded-sm flex-shrink-0">{p.availability_status}</span>
-                                )}
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  <span className={`text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-sm ${
+                                    p.listing_type === "Rent"
+                                      ? "bg-[#F1E9D8] text-[#8A6C34] border border-[#C6A15B]/40"
+                                      : "bg-[#E4E9F5]/60 text-[#3B5998] border border-[#C3CCE8]"
+                                  }`}>
+                                    {p.listing_type === "Rent" ? "For Rent" : "For Sale"}
+                                  </span>
+                                  {p.availability_status && (
+                                    <span className="text-[9px] font-mono uppercase tracking-wider bg-[#D9EAD3]/40 text-[#4B7A46] border border-[#A9C9A0]/40 px-2 py-0.5 rounded-sm">{p.availability_status}</span>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-[#C9BFA6]">
-                                <span className="text-[#F3EEE1] font-semibold">₹ {Number(p.price_in_inr || 0).toLocaleString("en-IN")}</span>
-                                {p.bhk != null && <span className="flex items-center gap-1"><BedDouble className="w-3 h-3 text-[#7D9471]" /> {p.bhk} BHK</span>}
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-[#6B6B6B]">
+                                <span className="text-[#2B2B2B] font-semibold">{formatPrice(p)}</span>
+                                {p.bhk != null && <span className="flex items-center gap-1"><BedDouble className="w-3 h-3 text-[#6B9A5E]" /> {p.bhk} BHK</span>}
                                 {p.area_sqft != null && <span>{p.area_sqft} {p.area_unit || "sqft"}</span>}
-                                {p.property_type && <span className="text-[#7D8AA1]">{p.property_type}</span>}
+                                {p.property_type && <span className="text-[#8B8B8B]">{p.property_type}</span>}
                               </div>
 
                               {st.data ? (
-                                <div className="mt-1 p-2.5 rounded-sm bg-[#0E1725] border border-[#6E8B6E]/40 text-[11px] space-y-1">
-                                  <div className="flex items-center gap-1.5 text-[#9FBF9A] font-mono uppercase tracking-wider text-[10px] font-semibold">
+                                <div className="mt-1 p-2.5 rounded-sm bg-[#FFFFFF] border border-[#A9C9A0]/40 text-[11px] space-y-1">
+                                  <div className="flex items-center gap-1.5 text-[#4B7A46] font-mono uppercase tracking-wider text-[10px] font-semibold">
                                     <CheckCircle className="w-3 h-3" /> Interest sent — broker contact
                                   </div>
-                                  <p className="text-[#EDE7D9]">{st.data.broker?.name || "Broker"}</p>
-                                  {st.data.broker?.phone && <p className="text-[#C9BFA6] font-mono">📞 {st.data.broker.phone}</p>}
-                                  {st.data.broker?.email && <p className="text-[#C9BFA6] font-mono">✉️ {st.data.broker.email}</p>}
-                                  <p className="text-[10px] text-[#7D8AA1] pt-1">{st.data.notice}</p>
+                                  <p className="text-[#2B2B2B]">{st.data.broker?.name || "Broker"}</p>
+                                  {st.data.broker?.phone && <p className="text-[#6B6B6B] font-mono">📞 {st.data.broker.phone}</p>}
+                                  {st.data.broker?.email && <p className="text-[#6B6B6B] font-mono">✉️ {st.data.broker.email}</p>}
+                                  <p className="text-[10px] text-[#8B8B8B] pt-1">{st.data.notice}</p>
                                 </div>
                               ) : (
                                 <button
                                   onClick={() => handleExpressInterest(p.id)}
                                   disabled={st.loading}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-50 text-[#0C1420] text-[11px] font-mono font-semibold uppercase tracking-wider transition"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-50 text-[#1E1E1E] text-[11px] font-mono font-semibold uppercase tracking-wider transition"
                                 >
                                   {st.loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                                   {st.loading ? "Sending..." : "Interested"}
                                 </button>
                               )}
-                              {st.error && <p className="text-[10px] text-[#DA6B6B] font-mono">{st.error}</p>}
+                              {st.error && <p className="text-[10px] text-[#C24545] font-mono">{st.error}</p>}
                             </div>
                           );
                         })}
                       </div>
                     )}
 
-                    <div className={`prose prose-sm max-w-none ${msg.role === "user" ? "prose-p:text-[#0C1420] prose-strong:text-[#0C1420]" : "prose-invert prose-p:text-[#D9D2BF] prose-strong:text-[#F3EEE1] prose-a:text-[#C6A15B]"}`}>
+                    <div className={`prose prose-sm max-w-none ${msg.role === "user" ? "prose-p:text-[#1E1E1E] prose-strong:text-[#1E1E1E]" : "prose-invert prose-p:text-[#5B5B5B] prose-strong:text-[#2B2B2B] prose-a:text-[#C6A15B]"}`}>
                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ node, ...props }) => (<a {...props} target="_blank" rel="noopener noreferrer" className="text-[#C6A15B] underline hover:text-[#D9B876] font-medium inline-flex items-center gap-1" />) }}>
                         {msg.content}
                       </ReactMarkdown>
@@ -1301,43 +1463,43 @@ export default function App() {
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="px-6 py-2.5 bg-[#0E1725]/70 backdrop-blur-md border-t border-[#C6A15B]/15 flex items-center gap-2 overflow-x-auto no-scrollbar font-mono">
-              <span className="text-[10px] font-semibold text-[#7D8AA1] uppercase tracking-[0.15em] flex-shrink-0">Quick Queries:</span>
-              <button onClick={() => handleSend("Find 3 BHK flats in Indore under 3 Cr")} disabled={loading} className="text-xs bg-[#141F30]/80 hover:bg-[#1A2536] text-[#D9D2BF] px-3 py-1.5 rounded-sm border border-[#2C3A50] hover:border-[#C6A15B]/40 transition flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50 shadow-sm">
-                <Home className="w-3 h-3 text-[#7D9471]" />
+            <div className="px-6 py-2.5 bg-[#FFFFFF]/70 backdrop-blur-md border-t border-[#C6A15B]/15 flex items-center gap-2 overflow-x-auto no-scrollbar font-mono">
+              <span className="text-[10px] font-semibold text-[#8B8B8B] uppercase tracking-[0.15em] flex-shrink-0">Quick Queries:</span>
+              <button onClick={() => handleSend("Find 3 BHK flats in Indore under 3 Cr")} disabled={loading} className="text-xs bg-[#F1E9D8]/80 hover:bg-[#E9DFC8] text-[#5B5B5B] px-3 py-1.5 rounded-sm border border-[#E4DCC9] hover:border-[#C6A15B]/40 transition flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50 shadow-sm">
+                <Home className="w-3 h-3 text-[#6B9A5E]" />
                 <span>3 BHK in Indore &lt; 3 Cr</span>
-                <ChevronRight className="w-3 h-3 text-[#7D8AA1]" />
+                <ChevronRight className="w-3 h-3 text-[#8B8B8B]" />
               </button>
-              <button onClick={() => setActiveView("verify")} className="text-xs bg-[#C6A15B]/15 hover:bg-[#C6A15B]/25 text-[#C6A15B] px-3 py-1.5 rounded-sm border border-[#C6A15B]/40 transition flex items-center gap-1.5 flex-shrink-0 shadow-sm">
+              <button onClick={() => navigate(VIEW_PATHS.verify)} className="text-xs bg-[#C6A15B]/15 hover:bg-[#C6A15B]/25 text-[#C6A15B] px-3 py-1.5 rounded-sm border border-[#C6A15B]/40 transition flex items-center gap-1.5 flex-shrink-0 shadow-sm">
                 <Sparkles className="w-3 h-3 text-[#C6A15B]" />
                 <span>🏠 Verify Property Photos</span>
                 <ChevronRight className="w-3 h-3 text-[#C6A15B]" />
               </button>
             </div>
 
-            <div className="p-4 bg-[#0E1725]/80 backdrop-blur-xl border-t border-[#C6A15B]/15 shadow-2xl font-body">
+            <div className="p-4 bg-[#FFFFFF]/80 backdrop-blur-xl border-t border-[#C6A15B]/15 shadow-2xl font-body">
               <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="max-w-4xl mx-auto relative flex items-center">
-                <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Search properties, BHK sizes, live listings, or locations..." disabled={loading} className="w-full bg-[#0A121D]/90 border border-[#2C3A50] focus:border-[#C6A15B] rounded-md py-4 pl-5 pr-14 text-sm text-[#EDE7D9] placeholder-[#7D8AA1] focus:outline-none focus:ring-2 focus:ring-[#C6A15B]/30 transition shadow-inner disabled:opacity-50" />
-                <button type="submit" disabled={loading || !input.trim()} aria-label="Send message" className="absolute right-2.5 p-2.5 bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-40 disabled:hover:bg-[#C6A15B] text-[#0C1420] rounded-sm transition shadow-lg">
+                <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Search properties, BHK sizes, live listings, or locations..." disabled={loading} className="w-full bg-[#FAF8F4]/90 border border-[#E4DCC9] focus:border-[#C6A15B] rounded-md py-4 pl-5 pr-14 text-sm text-[#2B2B2B] placeholder-[#8B8B8B] focus:outline-none focus:ring-2 focus:ring-[#C6A15B]/30 transition shadow-inner disabled:opacity-50" />
+                <button type="submit" disabled={loading || !input.trim()} aria-label="Send message" className="absolute right-2.5 p-2.5 bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-40 disabled:hover:bg-[#C6A15B] text-[#1E1E1E] rounded-sm transition shadow-lg">
                   <Send className="w-4 h-4" />
                 </button>
               </form>
-              <p className="text-center text-[10px] font-mono uppercase tracking-wider text-[#7D8AA1] mt-2.5">Powered by LangGraph Agent Orchestrator &amp; Gemini 3.6-Flash Engine</p>
+              <p className="text-center text-[10px] font-mono uppercase tracking-wider text-[#8B8B8B] mt-2.5">Powered by LangGraph Agent Orchestrator &amp; Gemini 3.6-Flash Engine</p>
             </div>
           </>
         ) : (
           <div className="flex-1 overflow-y-auto p-8 font-body space-y-8 max-w-5xl mx-auto w-full">
-            <div className="bg-[#0E1725]/80 border border-[#C6A15B]/30 p-6 rounded-md shadow-2xl space-y-6">
+            <div className="bg-[#FFFFFF]/80 border border-[#C6A15B]/30 p-6 rounded-md shadow-2xl space-y-6">
               <div>
-                <h3 className="text-lg font-display text-[#F3EEE1] flex items-center gap-2"><Sparkles className="w-5 h-5 text-[#C6A15B]" /> Property Room &amp; BHK Verification</h3>
-                <p className="text-xs text-[#8892A3] mt-1">Upload listing photographs to independently verify declared BHK configurations using Places365 pretrained scene classification AI.</p>
+                <h3 className="text-lg font-display text-[#2B2B2B] flex items-center gap-2"><Sparkles className="w-5 h-5 text-[#C6A15B]" /> Property Room &amp; BHK Verification</h3>
+                <p className="text-xs text-[#8B8B8B] mt-1">Upload listing photographs to independently verify declared BHK configurations using Gemini 3.6 Flash vision AI.</p>
               </div>
 
               <div className="space-y-2">
                 <label className="text-xs font-mono uppercase tracking-wider text-[#C6A15B] font-semibold">Select Claimed Configuration:</label>
                 <div className="flex gap-3">
                   {[1, 2, 3, 4, 5].map((bhk) => (
-                    <button key={bhk} onClick={() => setSelectedBhk(bhk)} className={`px-4 py-2 rounded-sm text-xs font-mono font-semibold transition border ${selectedBhk === bhk ? "bg-[#C6A15B] text-[#0C1420] border-[#C6A15B]" : "bg-[#141F30] text-[#D9D2BF] border-[#2C3A50] hover:border-[#C6A15B]/40"}`}>
+                    <button key={bhk} onClick={() => setSelectedBhk(bhk)} className={`px-4 py-2 rounded-sm text-xs font-mono font-semibold transition border ${selectedBhk === bhk ? "bg-[#C6A15B] text-[#1E1E1E] border-[#C6A15B]" : "bg-[#F1E9D8] text-[#5B5B5B] border-[#E4DCC9] hover:border-[#C6A15B]/40"}`}>
                       {bhk} BHK
                     </button>
                   ))}
@@ -1346,106 +1508,106 @@ export default function App() {
 
               <div className="space-y-2">
                 <label className="text-xs font-mono uppercase tracking-wider text-[#C6A15B] font-semibold">Upload Room Photos (Max 8):</label>
-                <div onDragOver={(e) => e.preventDefault()} onDrop={handleFileDrop} className="border-2 border-dashed border-[#2C3A50] hover:border-[#C6A15B]/50 rounded-md p-8 text-center bg-[#070C14]/60 transition flex flex-col items-center justify-center cursor-pointer relative" onClick={() => document.getElementById("hiddenFileInput").click()}>
+                <div onDragOver={(e) => e.preventDefault()} onDrop={handleFileDrop} className="border-2 border-dashed border-[#E4DCC9] hover:border-[#C6A15B]/50 rounded-md p-8 text-center bg-[#FAF8F4]/60 transition flex flex-col items-center justify-center cursor-pointer relative" onClick={() => document.getElementById("hiddenFileInput").click()}>
                   <input id="hiddenFileInput" type="file" multiple accept="image/*" className="hidden" onChange={handleFileSelect} />
                   <Upload className="w-8 h-8 text-[#C6A15B] mb-2" />
-                  <p className="text-sm text-[#D9D2BF] font-medium">Drag and drop apartment photos here, or click to browse</p>
-                  <p className="text-[11px] text-[#7D8AA1] mt-1">Supports PNG, JPG, JPEG (Analyzes distinct bedrooms)</p>
+                  <p className="text-sm text-[#5B5B5B] font-medium">Drag and drop apartment photos here, or click to browse</p>
+                  <p className="text-[11px] text-[#8B8B8B] mt-1">Supports PNG, JPG, JPEG (Analyzes distinct bedrooms)</p>
                 </div>
               </div>
 
               {selectedFiles.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-xs font-mono text-[#7D8AA1]">Selected Photos ({selectedFiles.length}/8):</p>
+                  <p className="text-xs font-mono text-[#8B8B8B]">Selected Photos ({selectedFiles.length}/8):</p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {selectedFiles.map((file, idx) => (
-                      <div key={idx} className="relative group rounded-md overflow-hidden border border-[#2C3A50] bg-[#070C14] h-28">
+                      <div key={idx} className="relative group rounded-md overflow-hidden border border-[#E4DCC9] bg-[#FAF8F4] h-28">
                         <img src={URL.createObjectURL(file)} alt={file.name} className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
                           <button onClick={(e) => { e.stopPropagation(); removeFile(idx); }} className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-full transition" title="Remove Image"><X className="w-3.5 h-3.5" /></button>
                         </div>
-                        <span className="absolute bottom-1 left-1 bg-black/70 text-[9px] font-mono px-1.5 py-0.5 rounded text-[#EDE7D9]">#{idx + 1}</span>
+                        <span className="absolute bottom-1 left-1 bg-black/70 text-[9px] font-mono px-1.5 py-0.5 rounded text-white">#{idx + 1}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              <button onClick={handleVerifySubmit} disabled={selectedFiles.length === 0 || verifyLoading} className="w-full py-3 bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-40 text-[#0C1420] font-semibold text-xs rounded-sm transition font-mono uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg">
-                {verifyLoading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Analyzing via Places365 CNN...</>) : (<><Sparkles className="w-4 h-4" /> Verify BHK Configuration Now</>)}
+              <button onClick={handleVerifySubmit} disabled={selectedFiles.length === 0 || verifyLoading} className="w-full py-3 bg-[#C6A15B] hover:bg-[#D9B876] disabled:opacity-40 text-[#1E1E1E] font-semibold text-xs rounded-sm transition font-mono uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg">
+                {verifyLoading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Analyzing via Gemini 3.6 Flash...</>) : (<><Sparkles className="w-4 h-4" /> Verify BHK Configuration Now</>)}
               </button>
             </div>
 
             {verifyResult && (
-              <div className="bg-[#0E1725]/90 border border-[#2C3A50] p-6 rounded-md shadow-2xl space-y-6">
-                <div className="flex items-center justify-between border-b border-[#2C3A50] pb-4">
+              <div className="bg-[#FFFFFF]/90 border border-[#E4DCC9] p-6 rounded-md shadow-2xl space-y-6">
+                <div className="flex items-center justify-between border-b border-[#E4DCC9] pb-4">
                   <div>
                     <h4 className="text-sm font-mono uppercase tracking-wider text-[#C6A15B]">Verification Audit Report</h4>
-                    <p className="text-xs text-[#8892A3] mt-0.5">Analyzed {verifyResult.images_analyzed} uploaded photographs</p>
+                    <p className="text-xs text-[#8B8B8B] mt-0.5">Analyzed {verifyResult.images_analyzed} uploaded photographs</p>
                   </div>
-                  <div className={`px-3 py-1 rounded-sm text-xs font-mono uppercase tracking-wider flex items-center gap-1.5 border ${verifyResult.verdict.matches ? "bg-[#3F5142]/40 text-[#9FBF9A] border-[#6E8B6E]/40" : "bg-[#553C3C]/40 text-[#DA6B6B] border-[#A16B6B]/40"}`}>
+                  <div className={`px-3 py-1 rounded-sm text-xs font-mono uppercase tracking-wider flex items-center gap-1.5 border ${verifyResult.verdict.matches ? "bg-[#D9EAD3]/40 text-[#4B7A46] border-[#A9C9A0]/40" : "bg-[#FBEAEA]/40 text-[#C24545] border-[#C24545]/40"}`}>
                     {verifyResult.verdict.matches ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
                     {verifyResult.verdict.matches ? "Config Verified Match" : "Mismatch Warning"}
                   </div>
                 </div>
 
                {/* Aggregate Verdict Summary Card */}
-                <div className="p-4 bg-[#070C14] rounded-sm border border-[#2C3A50] space-y-2">
+                <div className="p-4 bg-[#FAF8F4] rounded-sm border border-[#E4DCC9] space-y-2">
                   <div className="flex justify-between text-xs font-mono">
-                    <span className="text-[#8892A3]">Claimed BHK:</span>
-                    <span className="text-[#F3EEE1] font-semibold">{verifyResult.verdict.claimed_bhk} BHK</span>
+                    <span className="text-[#8B8B8B]">Claimed BHK:</span>
+                    <span className="text-[#2B2B2B] font-semibold">{verifyResult.verdict.claimed_bhk} BHK</span>
                   </div>
                   <div className="flex justify-between text-xs font-mono">
-                    <span className="text-[#8892A3]">Unique Bedrooms Detected:</span>
-                    <span className="text-[#F3EEE1] font-semibold">{verifyResult.verdict.unique_bedrooms_detected} Found (from {verifyResult.verdict.raw_bedroom_photos} photos)</span>
+                    <span className="text-[#8B8B8B]">Unique Bedrooms Detected:</span>
+                    <span className="text-[#2B2B2B] font-semibold">{verifyResult.verdict.unique_bedrooms_detected} Found (from {verifyResult.verdict.raw_bedroom_photos} photos)</span>
                   </div>
                   
                   {verifyResult.verdict.duplicate_groups?.length > 0 && (
-                    <div className="mt-3 p-2.5 bg-[#553C3C]/20 border border-[#DA6B6B]/30 rounded-sm space-y-1.5">
-                      <div className="flex items-center gap-1.5 text-[10px] text-[#DA6B6B] font-mono uppercase tracking-wider font-semibold">
+                    <div className="mt-3 p-2.5 bg-[#FBEAEA]/20 border border-[#C24545]/30 rounded-sm space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-[10px] text-[#C24545] font-mono uppercase tracking-wider font-semibold">
                         <AlertTriangle className="w-3 h-3" /> Duplicate Photos Detected
                       </div>
                       {verifyResult.verdict.duplicate_groups.map((group, gIdx) => (
-                         <p key={gIdx} className="text-xs text-[#C9BFA6] font-body">
+                         <p key={gIdx} className="text-xs text-[#6B6B6B] font-body">
                            ⚠️ Photos #{group.photo_indices.join(" and #")} look like the same room ({(group.similarity * 100).toFixed(1)}% match).
                          </p>
                       ))}
                     </div>
                   )}
                   {verifyResult.verdict.low_confidence_warning && (
-    <div className="mt-3 p-2.5 bg-[#5C4A2E]/20 border border-[#C6A15B]/30 rounded-sm space-y-1.5">
+    <div className="mt-3 p-2.5 bg-[#FBF0DC]/20 border border-[#C6A15B]/30 rounded-sm space-y-1.5">
       <div className="flex items-center gap-1.5 text-[10px] text-[#C6A15B] font-mono uppercase tracking-wider font-semibold">
         <AlertTriangle className="w-3 h-3" /> Low Confidence — Manual Check Suggested
       </div>
-      <p className="text-xs text-[#C9BFA6] font-body">
+      <p className="text-xs text-[#6B6B6B] font-body">
         {verifyResult.verdict.low_confidence_warning}
       </p>
     </div>
   )}
 
-                  <p className="text-xs text-[#C9BFA6] pt-2 border-t border-[#2C3A50]/60 leading-relaxed font-body">
+                  <p className="text-xs text-[#6B6B6B] pt-2 border-t border-[#E4DCC9]/60 leading-relaxed font-body">
                     {verifyResult.verdict.confidence_note}
                   </p>
                 </div>
 
                 {/* Per-image breakdown */}
                 <div className="space-y-3">
-                  <p className="text-xs font-mono uppercase tracking-wider text-[#7D8AA1]">Per-Image Scene Classification Details:</p>
+                  <p className="text-xs font-mono uppercase tracking-wider text-[#8B8B8B]">Per-Image Scene Classification Details:</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {verifyResult.verdict.all_detected_rooms.map((room, rIdx) => {
                       const isDuplicate = verifyResult.verdict.duplicate_groups?.some(g => g.photo_indices.includes(room.image_index));
                       return (
-                        <div key={rIdx} className={`p-3 bg-[#070C14]/80 border ${isDuplicate ? "border-[#DA6B6B]/40 bg-[#553C3C]/10" : "border-[#2C3A50]"} rounded-sm flex items-center justify-between text-xs transition-colors`}>
+                        <div key={rIdx} className={`p-3 bg-[#FAF8F4]/80 border ${isDuplicate ? "border-[#C24545]/40 bg-[#FBEAEA]/10" : "border-[#E4DCC9]"} rounded-sm flex items-center justify-between text-xs transition-colors`}>
                           <div className="space-y-1">
                             <span className="font-mono text-[#C6A15B] font-semibold">
                               Photo #{room.image_index}
-                              {isDuplicate && <span className="ml-2 bg-[#553C3C]/60 text-[#DA6B6B] px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border border-[#A16B6B]/40">Duplicate</span>}
+                              {isDuplicate && <span className="ml-2 bg-[#FBEAEA]/60 text-[#C24545] px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border border-[#C24545]/40">Duplicate</span>}
                             </span>
-                            <p className="text-[#EDE7D9] capitalize font-medium">Mapped: {room.room_type.replace("_", " ")}</p>
-                            <p className="text-[10px] text-[#7D8AA1] font-mono">Raw Scene: {room.raw_category}</p>
+                            <p className="text-[#2B2B2B] capitalize font-medium">Mapped: {room.room_type.replace("_", " ")}</p>
+                            <p className="text-[10px] text-[#8B8B8B] font-mono">Raw Scene: {room.raw_category}</p>
                           </div>
                           <div className="text-right font-mono">
-                            <span className={`px-2 py-0.5 rounded text-[10px] ${room.room_type === "bedroom" ? "bg-[#3F5142]/40 text-[#9FBF9A]" : "bg-[#141F30] text-[#8892A3]"}`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] ${room.room_type === "bedroom" ? "bg-[#D9EAD3]/40 text-[#4B7A46]" : "bg-[#F1E9D8] text-[#8B8B8B]"}`}>
                               {(room.confidence * 100).toFixed(1)}% conf
                             </span>
                           </div>
@@ -1456,7 +1618,7 @@ export default function App() {
                 </div>
 
                 <div className="pt-2 flex justify-end">
-                  <button onClick={() => setActiveView("chat")} className="px-4 py-2 bg-[#141F30] hover:bg-[#1A2536] text-[#D9D2BF] border border-[#2C3A50] rounded-sm text-xs font-mono transition">
+                  <button onClick={() => navigate(VIEW_PATHS.chat)} className="px-4 py-2 bg-[#F1E9D8] hover:bg-[#E9DFC8] text-[#5B5B5B] border border-[#E4DCC9] rounded-sm text-xs font-mono transition">
                     Return to Active Chat
                   </button>
                 </div>
@@ -1476,7 +1638,7 @@ export default function App() {
           <button
             onClick={() => setLightboxSrc(null)}
             aria-label="Close image"
-            className="absolute top-4 right-4 p-2 bg-[#0E1725]/80 border border-[#C6A15B]/40 text-[#EDE7D9] rounded-sm hover:bg-[#1A2536] transition"
+            className="absolute top-4 right-4 p-2 bg-[#FFFFFF]/80 border border-[#C6A15B]/40 text-[#2B2B2B] rounded-sm hover:bg-[#E9DFC8] transition"
           >
             <X className="w-5 h-5" />
           </button>
@@ -1484,10 +1646,30 @@ export default function App() {
             src={lightboxSrc}
             alt="Property photo enlarged"
             onClick={(e) => e.stopPropagation()}
-            className="max-w-full max-h-full object-contain rounded-md shadow-2xl border border-[#2C3A50] cursor-default"
+            className="max-w-full max-h-full object-contain rounded-md shadow-2xl border border-[#E4DCC9] cursor-default"
           />
         </div>
       )}
     </div>
+  );
+}
+
+function LandingPageRoute() {
+  const navigate = useNavigate();
+  return <LandingPage onGetStarted={() => navigate(VIEW_PATHS.login)} />;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<LandingPageRoute />} />
+        {/* Everything past landing is one persistent AppShell instance so
+            in-app state (chat sessions, broker listings, etc.) survives
+            across view changes; AppShell itself reads the URL to decide
+            which view to render and to guard access. */}
+        <Route path="/*" element={<AppShell />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

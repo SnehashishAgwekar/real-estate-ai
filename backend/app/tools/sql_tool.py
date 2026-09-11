@@ -10,6 +10,7 @@ def query_structured_properties(
     max_price: Optional[float] = None,
     min_bhk: Optional[int] = None,
     property_type: Optional[str] = None,
+    listing_type: Optional[str] = None,
     limit: int = 5
 ) -> List[Dict[str, Any]]:
     """
@@ -30,6 +31,8 @@ def query_structured_properties(
         query = query.filter(PropertyModel.bhk >= min_bhk)
     if property_type:
         query = query.filter(PropertyModel.property_type.ilike(f"%{property_type.strip()}%"))
+    if listing_type:
+        query = query.filter(PropertyModel.listing_type.ilike(listing_type.strip()))
 
     results = query.order_by(PropertyModel.created_at.desc()).limit(limit).all()
 
@@ -41,6 +44,8 @@ def query_structured_properties(
             "city": p.city,
             "location": p.location,
             "price_in_inr": p.price_in_inr,
+            "listing_type": p.listing_type,
+            "security_deposit": p.security_deposit,
             "bhk": p.bhk,
             "area_sqft": p.area_sqft,
             "area_unit": p.area_unit or "sqft",
@@ -52,8 +57,11 @@ def query_structured_properties(
             "source_url": p.source_url,
             "source": p.source,
             "broker_id": p.broker_id,
-            # True when this is one of our own broker-uploaded listings
             "on_platform": p.broker_id is not None,
+            # Add broker details fetched from relationship
+            "broker_name": p.broker.name if p.broker else None,
+            "broker_phone": p.broker.phone_number if p.broker else None,
+            "broker_email": p.broker.email if p.broker else None,
         })
 
     return properties_list

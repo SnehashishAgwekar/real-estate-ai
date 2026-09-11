@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,62 @@ from app.core.security import get_current_user
 from app.core.notifications import notify_property_interest
 
 router = APIRouter()
+
+
+@router.get("")
+@router.get("/")
+def list_properties(
+    city: Optional[str] = None,
+    builder_name: Optional[str] = None,
+    property_name: Optional[str] = None,
+    bhk: Optional[int] = Query(None, ge=0, le=50),
+    listing_type: Optional[str] = Query(None, pattern="^(Sale|Rent)$"),
+    sort: str = Query("relevance", pattern="^(relevance|price_asc|price_desc)$"),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Every property in the catalog, for the buyer-facing Property Explorer
+    dashboard. Supports locality/project/builder/BHK/listing-type filtering
+    and price sorting; 'relevance' falls back to newest-first.
+    """
+    query = db.query(PropertyModel)
+    if city:
+        query = query.filter(PropertyModel.city.ilike(f"%{city}%"))
+    if builder_name:
+        query = query.filter(PropertyModel.builder_name.ilike(f"%{builder_name}%"))
+    if property_name:
+        query = query.filter(PropertyModel.property_name.ilike(f"%{property_name}%"))
+    if bhk is not None:
+        query = query.filter(PropertyModel.bhk == bhk)
+    if listing_type:
+        query = query.filter(PropertyModel.listing_type == listing_type)
+
+    if sort == "price_asc":
+        query = query.order_by(PropertyModel.price_in_inr.asc())
+    elif sort == "price_desc":
+        query = query.order_by(PropertyModel.price_in_inr.desc())
+    else:
+        query = query.order_by(PropertyModel.created_at.desc())
+
+    return query.all()
+
+
+@router.get("/filters")
+def list_property_filters(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Distinct localities/builders currently in the catalog, for filter dropdowns."""
+    cities = [
+        row[0] for row in db.query(PropertyModel.city).distinct().order_by(PropertyModel.city).all()
+        if row[0]
+    ]
+    builders = [
+        row[0] for row in db.query(PropertyModel.builder_name).distinct().order_by(PropertyModel.builder_name).all()
+        if row[0]
+    ]
+    return {"cities": cities, "builders": builders}
 
 
 def require_end_user(current_user: UserModel = Depends(get_current_user)) -> UserModel:
@@ -122,6 +178,14 @@ def my_interests(
             "property_name": prop.property_name,
             "city": prop.city,
             "location": prop.location,
+            "price_in_inr": prop.price_in_inr,
+            "listing_type": prop.listing_type,
+            "bhk": prop.bhk,
+            "area_sqft": prop.area_sqft,
+            "area_unit": prop.area_unit,
+            "property_type": prop.property_type,
+            "availability_status": prop.availability_status,
+            "image_urls": prop.image_urls or [],
             "broker": _contact(broker),
         }
         for (interest, prop, broker) in rows
