@@ -18,6 +18,10 @@ app = FastAPI(title="Real Estate AI")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    # Vite bumps to the next free port (5174, 5175, ...) whenever 5173 is
+    # already taken, which silently CORS-blocked every dev machine that
+    # wasn't on the exact port above. Allow any localhost port too.
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1):\d+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
