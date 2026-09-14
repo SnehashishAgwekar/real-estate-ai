@@ -6,7 +6,7 @@ An advanced, multi-agent real estate platform powered by Large Language Models (
 
 * **Multi-Agent Orchestration:** Utilizes LangGraph and Gemini 3.6-Flash to route user queries intelligently across different domains (SQL databases, Vector RAG, and Live Web Search).
 * **Property Room & BHK Verification:** An automated computer vision pipeline that independently verifies a seller's claimed BHK (Bedroom, Hall, Kitchen) configuration using uploaded photographs.
-* **Visual Fraud Detection:** Prevents users from artificially inflating room counts by detecting duplicate angles of the same physical room using vector embeddings and cosine similarity.
+* **Visual Fraud Detection:** Prevents users from artificially inflating room counts by having Gemini 3.6-Flash detect duplicate angles of the same physical room across uploaded photos.
 * **Modern Stack:** Built on FastAPI, React, PostgreSQL, and Qdrant, orchestrated seamlessly via Docker Compose.
 
 ##  System Architecture & Tech Stack
@@ -26,24 +26,18 @@ An advanced, multi-agent real estate platform powered by Large Language Models (
 * **LLM Engine:** Gemini 3.6-Flash
 * **Agent Framework:** LangGraph (Node-based decision routing)
 * **Web Search:** Tavily API
-* **Vision Classification:** Places365 (ResNet18 architecture) via PyTorch
-* **Visual Embeddings:** OpenAI CLIP (ViT-B-32) via `sentence-transformers`
+* **Vision Verification:** Gemini 3.6-Flash (multimodal) — room classification and duplicate-photo detection in a single call
 
 ---
 
 ##  Deep Dive: The BHK Verification Engine
 
-A standout feature of this platform is the anti-fraud verification pipeline, which operates in two distinct phases:
+A standout feature of this platform is the anti-fraud verification pipeline. When a user uploads property photos, the backend sends all of them to **Gemini 3.6-Flash** in one multimodal request, asking it to:
 
-### Phase 1: Scene Classification (Places365)
-When a user uploads property photos, the backend passes each image through a pretrained **Places365 ResNet18 Convolutional Neural Network (CNN)**. The model outputs a raw scene category (e.g., `bedchamber`, `hotel_room`), which our logic maps to standardized real estate labels (e.g., `bedroom`). It returns these classifications with a Softmax confidence percentage.
+1. **Classify each photo's room type** (bedroom, bathroom, kitchen, living room, dining room, closet, or other).
+2. **Group bedroom photos that show the same physical room** from a different angle or distance — so uploading four photos of the exact same bedroom can't be used to fake a "4 BHK" claim.
 
-### Phase 2: Visual Deduplication (CLIP)
-A naive system can be tricked by uploading four photos of the exact same bedroom to claim a "4 BHK". To solve this, all images classified as bedrooms are passed through **OpenAI's CLIP (ViT-B-32)** model. 
-* The model generates a dense, 512-dimensional vector embedding for each image.
-* The system calculates the **Cosine Similarity** between all bedroom embeddings.
-* Images with a similarity score of **≥ 0.90** are mathematically clustered as "duplicate angles of the same physical room."
-* The final verdict relies exclusively on the *unique* room count, ensuring high integrity in property listings.
+The final claimed-vs-detected BHK comparison is then computed in plain Python from Gemini's structured output, not by the model itself, so that number can never be an LLM mistake.
 
 ---
 
@@ -54,7 +48,41 @@ A naive system can be tricked by uploading four photos of the exact same bedroom
 * Python 3.10+
 * Node.js v18+
 
-### 1. Infrastructure Setup
-Ensure your `.env` file is configured in the root directory with the necessary API keys (`TAVILY_API_KEY`, `GOOGLE_API_KEY`).
+### 1. Environment variables
+Copy the example env file at the repo root and fill in your own keys (`TAVILY_API_KEY`, `GOOGLE_API_KEY`; the rest have working local defaults):
+```bash
+cp .env.example .env
+```
+
+### 2. Infrastructure (Postgres + Qdrant)
 ```bash
 docker-compose up -d
+```
+
+### 3. Backend
+```bash
+cd backend
+python -m venv venv
+# Windows: venv\Scripts\activate   |   macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt
+
+# Create the tables (safe to re-run)
+python scripts/init_db.py
+
+# Populate sample users, brokers, and listings so the app isn't empty
+python scripts/seed.py
+
+# Start the API — http://localhost:8000
+uvicorn app.main:app --reload
+```
+`seed.py` prints the demo login credentials it creates when it finishes — use those to sign in as a buyer or broker without registering a new account.
+
+### 4. Frontend
+```bash
+cd frontend
+npm install
+npm run dev   # http://localhost:5173
+```
+
+### A note for anyone cloning this repo
+Postgres data lives in a local Docker volume, not in Git — a fresh clone always starts with an empty database. `init_db.py` only creates the schema; `seed.py` is what actually gives you something to look at. Both are safe to run again later (they skip anything that already exists).
