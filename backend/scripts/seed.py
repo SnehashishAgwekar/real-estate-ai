@@ -26,6 +26,27 @@ from app.core.security import get_password_hash
 # Every seeded account uses this password — shown at the end of the run too.
 DEMO_PASSWORD = "Demo@1234"
 
+
+def _img(photo_id: str, w: int = 1200) -> str:
+    return f"https://images.unsplash.com/photo-{photo_id}?auto=format&fit=crop&w={w}&q=80"
+
+
+# Stock photos grouped by what they actually show, so each seed listing's
+# images match its property_type instead of being random. Every URL below
+# was verified to load (200, image/jpeg) before being added.
+_APT_BEDROOM_1 = _img("1522708323590-d24dbb6b0267")
+_APT_BEDROOM_2 = _img("1512918728675-ed5a9ecdebfd")
+_APT_SEATING = _img("1502672260266-1c1ef2d93688")
+_APT_LIVING_WINDOW = _img("1583847268964-b28dc8f51f92")
+_APT_LIVING_MINIMAL = _img("1585128792020-803d29415281")
+_APT_LIVING_NEUTRAL = _img("1560448204-e02f11c3d0e2")
+_APT_KITCHEN = _img("1484154218962-a197022b5858")
+_VILLA_EXTERIOR = _img("1580587771525-78b9dba3b914")
+_VILLA_POOL = _img("1613977257592-4871e5fcd7c4")
+_HOUSE_LOW_ANGLE = _img("1574245076380-a66f5bd39ecc")
+_HOUSE_FRONT = _img("1621417403732-e564f462e7ec")
+_PLOT_FIELD = _img("1599809563132-4b678fb6f611")
+
 USERS = [
     {"name": "Asha Mehta", "email": "asha.buyer@example.com", "role": "user", "phone_number": "9800000001"},
     {"name": "Rohan Verma", "email": "rohan.buyer@example.com", "role": "user", "phone_number": "9800000002"},
@@ -50,6 +71,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "priya.broker@example.com",
+        "image_urls": [_APT_BEDROOM_1, _APT_LIVING_WINDOW],
     },
     {
         "property_name": "DCNPL Hills", "city": "Indore", "location": "Super Corridor",
@@ -57,6 +79,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "priya.broker@example.com",
+        "image_urls": [_APT_BEDROOM_2, _APT_KITCHEN],
     },
     {
         "property_name": "Victoria Urban Oasis", "city": "Indore", "location": "Super Corridor",
@@ -64,6 +87,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "priya.broker@example.com",
+        "image_urls": [_APT_SEATING, _APT_LIVING_MINIMAL],
     },
     # -- Sanjay Oberoi's listings --
     {
@@ -72,6 +96,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Villa", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "sanjay.broker@example.com",
+        "image_urls": [_VILLA_EXTERIOR, _VILLA_POOL],
     },
     {
         "property_name": "4 BHK House / VILLA", "city": "Indore", "location": "Laxmi Nagar Colony, Nipania, Sector D",
@@ -79,6 +104,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Villa", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "sanjay.broker@example.com",
+        "image_urls": [_VILLA_POOL, _VILLA_EXTERIOR],
     },
     # -- Meera Nair's listings --
     {
@@ -87,6 +113,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "meera.broker@example.com",
+        "image_urls": [_APT_LIVING_WINDOW, _APT_LIVING_NEUTRAL],
     },
     {
         "property_name": "Kalindi Kunj Annexe", "city": "Indore", "location": "Sahara City Homes",
@@ -94,6 +121,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "meera.broker@example.com",
+        "image_urls": [_APT_BEDROOM_1, _APT_KITCHEN],
     },
     {
         "property_name": "HelloWorld Peace", "city": "Indore", "location": "Vijay Nagar",
@@ -101,6 +129,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "meera.broker@example.com",
+        "image_urls": [_APT_LIVING_MINIMAL, _APT_SEATING],
     },
     {
         "property_name": "Shanti Kunj", "city": "Indore", "location": "Navlakha",
@@ -108,6 +137,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "meera.broker@example.com",
+        "image_urls": [_APT_BEDROOM_2, _APT_LIVING_NEUTRAL],
     },
     # -- Karan Deshmukh's listings --
     {
@@ -116,6 +146,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Independent House", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "karan.broker@example.com",
+        "image_urls": [_HOUSE_LOW_ANGLE, _HOUSE_FRONT],
     },
     {
         "property_name": "Independent House in Mahalaxmi Nagar", "city": "Indore", "location": "Mahalaxmi Nagar",
@@ -123,6 +154,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Independent House", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "karan.broker@example.com",
+        "image_urls": [_HOUSE_FRONT, _HOUSE_LOW_ANGLE],
     },
     {
         "property_name": "Mahadevi Redwood Platinum", "city": "Indore", "location": "Pigdamber",
@@ -130,6 +162,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "karan.broker@example.com",
+        "image_urls": [_APT_LIVING_WINDOW, _APT_BEDROOM_1],
     },
     {
         "property_name": "Emerald Paradise Cove", "city": "Indore", "location": "Panod",
@@ -137,6 +170,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Plot", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "karan.broker@example.com",
+        "image_urls": [_PLOT_FIELD],
     },
     # -- Rent examples (no real-data equivalent yet) --
     {
@@ -145,6 +179,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": "Lift, Security", "availability_status": "Ready to Move",
         "broker_email": "priya.broker@example.com", "security_deposit": 50000,
+        "image_urls": [_APT_LIVING_NEUTRAL, _APT_KITCHEN],
     },
     {
         "property_name": "Lakeview 1BHK Studio", "city": "Pune", "location": "Kharadi",
@@ -152,6 +187,7 @@ PROPERTIES = [
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": "Furnished, Wifi", "availability_status": "Ready to Move",
         "broker_email": "meera.broker@example.com", "security_deposit": 30000,
+        "image_urls": [_APT_LIVING_MINIMAL, _APT_BEDROOM_2],
     },
 ]
 
@@ -195,6 +231,11 @@ def seed_properties(db, users_by_email: dict) -> None:
             .first()
         )
         if existing:
+            # Backfill images onto rows seeded before this script had any
+            # (harmless no-op once every row has photos).
+            if not existing.image_urls and p.get("image_urls"):
+                existing.image_urls = p["image_urls"]
+                print(f"  + added photos to \"{p['property_name']}\"")
             continue
         db.add(PropertyModel(
             property_name=p["property_name"],
@@ -210,6 +251,7 @@ def seed_properties(db, users_by_email: dict) -> None:
             builder_name=p["builder_name"],
             amenities=p["amenities"],
             availability_status=p["availability_status"],
+            image_urls=p.get("image_urls"),
             source="seed_script",
             broker_id=broker.id,
         ))

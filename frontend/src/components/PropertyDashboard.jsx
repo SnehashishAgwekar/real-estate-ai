@@ -8,6 +8,11 @@ import CasivaLogo from "./CasivaLogo";
 const API_BASE = "http://localhost:8000/api/v1";
 const MEDIA_BASE = "http://localhost:8000";
 
+// Broker-uploaded photos are server-relative ("/static/uploads/xxx.jpg");
+// seed-data photos are already-absolute URLs (e.g. Unsplash). Only prefix
+// the ones that need it.
+const resolveImg = (url) => (url && /^https?:\/\//i.test(url) ? url : `${MEDIA_BASE}${url}`);
+
 const SORT_OPTIONS = [
   { value: "relevance", label: "Relevance" },
   { value: "price_asc", label: "Price: Low to High" },
@@ -235,12 +240,12 @@ export default function PropertyDashboard({ token, currentUser, onAskAI, onProfi
                         {p.image_urls.map((url, i) => (
                           <img
                             key={i}
-                            src={`${MEDIA_BASE}${url}`}
+                            src={resolveImg(url)}
                             alt={`${p.property_name} photo ${i + 1}`}
                             loading="lazy"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setLightboxSrc(`${MEDIA_BASE}${url}`);
+                              setLightboxSrc(resolveImg(url));
                             }}
                             className="h-40 w-full object-cover flex-shrink-0 cursor-zoom-in hover:brightness-105 transition"
                           />
@@ -329,9 +334,9 @@ export default function PropertyDashboard({ token, currentUser, onAskAI, onProfi
                   {selectedProperty.image_urls.map((url, i) => (
                     <img
                       key={i}
-                      src={`${MEDIA_BASE}${url}`}
+                      src={resolveImg(url)}
                       alt={`${selectedProperty.property_name} photo ${i + 1}`}
-                      onClick={() => setLightboxSrc(`${MEDIA_BASE}${url}`)}
+                      onClick={() => setLightboxSrc(resolveImg(url))}
                       className="h-28 w-full object-cover rounded-sm border border-[#E4DCC9] cursor-zoom-in hover:brightness-105 transition"
                     />
                   ))}
