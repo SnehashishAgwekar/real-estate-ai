@@ -31,45 +31,114 @@ USERS = [
     {"name": "Rohan Verma", "email": "rohan.buyer@example.com", "role": "user", "phone_number": "9800000002"},
     {"name": "Priya Kapoor", "email": "priya.broker@example.com", "role": "broker", "phone_number": "9800000003"},
     {"name": "Sanjay Oberoi", "email": "sanjay.broker@example.com", "role": "broker", "phone_number": "9800000004"},
+    {"name": "Meera Nair", "email": "meera.broker@example.com", "role": "broker", "phone_number": "9800000005"},
+    {"name": "Karan Deshmukh", "email": "karan.broker@example.com", "role": "broker", "phone_number": "9800000006"},
 ]
 
+# The 13 listings below are real Indore-market listings this project's own
+# dev database has accumulated (grouped under 4 brokers, same as the real
+# data) — only the broker identities are fictional; property names/prices/
+# locations are real and not personal data, so it's safe to ship them here.
+# Two Rent examples are added on top so the Sale/Rent filter has coverage.
+#
 # broker_email is resolved to an id after the brokers above are created.
 PROPERTIES = [
+    # -- Priya Kapoor's listings --
     {
-        "property_name": "Skyline Residences", "city": "Indore", "location": "Vijay Nagar",
-        "price_in_inr": 9500000, "listing_type": "Sale", "bhk": 3, "area_sqft": 1650,
-        "area_unit": "sqft", "property_type": "Apartment", "builder_name": "ABC Group",
-        "amenities": "Pool, Gym, Clubhouse", "availability_status": "Ready to Move",
+        "property_name": "DCNPL Hills", "city": "Indore", "location": "Super Corridor",
+        "price_in_inr": 7000000, "listing_type": "Sale", "bhk": 2, "area_sqft": 1207,
+        "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "priya.broker@example.com",
     },
     {
-        "property_name": "Greenfield Homes", "city": "Indore", "location": "Rau",
-        "price_in_inr": 4200000, "listing_type": "Sale", "bhk": 2, "area_sqft": 980,
-        "area_unit": "sqft", "property_type": "Apartment", "builder_name": "Greenfield Developers",
-        "amenities": "Garden, Parking", "availability_status": "Under Construction",
+        "property_name": "DCNPL Hills", "city": "Indore", "location": "Super Corridor",
+        "price_in_inr": 10000000, "listing_type": "Sale", "bhk": 3, "area_sqft": 1660,
+        "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "priya.broker@example.com",
     },
     {
-        "property_name": "Oceanview Villa", "city": "Pune", "location": "Baner",
-        "price_in_inr": 25000000, "listing_type": "Sale", "bhk": 4, "area_sqft": 3200,
+        "property_name": "Victoria Urban Oasis", "city": "Indore", "location": "Super Corridor",
+        "price_in_inr": 3800000, "listing_type": "Sale", "bhk": 2, "area_sqft": 628,
+        "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "priya.broker@example.com",
+    },
+    # -- Sanjay Oberoi's listings --
+    {
+        "property_name": "3 BHK House / VILLA", "city": "Indore", "location": "Nipania",
+        "price_in_inr": 16000000, "listing_type": "Sale", "bhk": 3, "area_sqft": 1000,
         "area_unit": "sqft", "property_type": "Villa", "builder_name": None,
-        "amenities": "Private Pool, Garden", "availability_status": "Ready to Move",
-        "broker_email": "sanjay.broker@example.com",
-    },
-    {
-        "property_name": "Riverside Plot 12", "city": "Indore", "location": "Super Corridor",
-        "price_in_inr": 3500000, "listing_type": "Sale", "bhk": None, "area_sqft": 0.15,
-        "area_unit": "acre", "property_type": "Plot", "builder_name": None,
         "amenities": None, "availability_status": "Ready to Move",
         "broker_email": "sanjay.broker@example.com",
     },
     {
-        "property_name": "Metro Business Hub", "city": "Pune", "location": "Hinjewadi",
-        "price_in_inr": 18000000, "listing_type": "Sale", "bhk": None, "area_sqft": 2200,
-        "area_unit": "sqft", "property_type": "Commercial", "builder_name": "Metro Realty",
-        "amenities": "Elevator, Power Backup", "availability_status": "Ready to Move",
-        "broker_email": "priya.broker@example.com",
+        "property_name": "4 BHK House / VILLA", "city": "Indore", "location": "Laxmi Nagar Colony, Nipania, Sector D",
+        "price_in_inr": 16500000, "listing_type": "Sale", "bhk": 4, "area_sqft": 2500,
+        "area_unit": "sqft", "property_type": "Villa", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "sanjay.broker@example.com",
     },
+    # -- Meera Nair's listings --
+    {
+        "property_name": "Apollo DB City", "city": "Indore", "location": "Nipania",
+        "price_in_inr": 5500000, "listing_type": "Sale", "bhk": 2, "area_sqft": 1300,
+        "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "meera.broker@example.com",
+    },
+    {
+        "property_name": "Kalindi Kunj Annexe", "city": "Indore", "location": "Sahara City Homes",
+        "price_in_inr": 9500000, "listing_type": "Sale", "bhk": 4, "area_sqft": 2800,
+        "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "meera.broker@example.com",
+    },
+    {
+        "property_name": "HelloWorld Peace", "city": "Indore", "location": "Vijay Nagar",
+        "price_in_inr": 3000000, "listing_type": "Sale", "bhk": 1, "area_sqft": 300,
+        "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "meera.broker@example.com",
+    },
+    {
+        "property_name": "Shanti Kunj", "city": "Indore", "location": "Navlakha",
+        "price_in_inr": 4500000, "listing_type": "Sale", "bhk": 1, "area_sqft": 1500,
+        "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "meera.broker@example.com",
+    },
+    # -- Karan Deshmukh's listings --
+    {
+        "property_name": "Nivas", "city": "Indore", "location": "Kushwah Nagar",
+        "price_in_inr": 27000000, "listing_type": "Sale", "bhk": 4, "area_sqft": 3000,
+        "area_unit": "sqft", "property_type": "Independent House", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "karan.broker@example.com",
+    },
+    {
+        "property_name": "Independent House in Mahalaxmi Nagar", "city": "Indore", "location": "Mahalaxmi Nagar",
+        "price_in_inr": 13000000, "listing_type": "Sale", "bhk": 3, "area_sqft": 1300,
+        "area_unit": "sqft", "property_type": "Independent House", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "karan.broker@example.com",
+    },
+    {
+        "property_name": "Mahadevi Redwood Platinum", "city": "Indore", "location": "Pigdamber",
+        "price_in_inr": 21600000, "listing_type": "Sale", "bhk": None, "area_sqft": 1000,
+        "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "karan.broker@example.com",
+    },
+    {
+        "property_name": "Emerald Paradise Cove", "city": "Indore", "location": "Panod",
+        "price_in_inr": 16000000, "listing_type": "Sale", "bhk": None, "area_sqft": 4000,
+        "area_unit": "sqft", "property_type": "Plot", "builder_name": None,
+        "amenities": None, "availability_status": "Ready to Move",
+        "broker_email": "karan.broker@example.com",
+    },
+    # -- Rent examples (no real-data equivalent yet) --
     {
         "property_name": "Sunrise Apartments 2B", "city": "Indore", "location": "Vijay Nagar",
         "price_in_inr": 18000, "listing_type": "Rent", "bhk": 2, "area_sqft": 950,
@@ -78,18 +147,11 @@ PROPERTIES = [
         "broker_email": "priya.broker@example.com", "security_deposit": 50000,
     },
     {
-        "property_name": "Hilltop Independent House", "city": "Bhopal", "location": "Arera Colony",
-        "price_in_inr": 32000, "listing_type": "Rent", "bhk": 3, "area_sqft": 1800,
-        "area_unit": "sqft", "property_type": "Independent House", "builder_name": None,
-        "amenities": "Terrace, Parking", "availability_status": "Ready to Move",
-        "broker_email": "sanjay.broker@example.com", "security_deposit": 100000,
-    },
-    {
         "property_name": "Lakeview 1BHK Studio", "city": "Pune", "location": "Kharadi",
         "price_in_inr": 15000, "listing_type": "Rent", "bhk": 1, "area_sqft": 550,
         "area_unit": "sqft", "property_type": "Apartment", "builder_name": None,
         "amenities": "Furnished, Wifi", "availability_status": "Ready to Move",
-        "broker_email": "sanjay.broker@example.com", "security_deposit": 30000,
+        "broker_email": "meera.broker@example.com", "security_deposit": 30000,
     },
 ]
 
@@ -120,9 +182,16 @@ def seed_users(db) -> dict:
 def seed_properties(db, users_by_email: dict) -> None:
     for p in PROPERTIES:
         broker = users_by_email[p["broker_email"]]
+        # Include bhk in the match key: a broker can legitimately list two
+        # differently-configured units under the same project name (e.g. a
+        # 2 BHK and a 3 BHK both called "DCNPL Hills").
         existing = (
             db.query(PropertyModel)
-            .filter(PropertyModel.property_name == p["property_name"], PropertyModel.broker_id == broker.id)
+            .filter(
+                PropertyModel.property_name == p["property_name"],
+                PropertyModel.broker_id == broker.id,
+                PropertyModel.bhk == p["bhk"],
+            )
             .first()
         )
         if existing:
