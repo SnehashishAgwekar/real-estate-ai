@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database.connection import get_db
 from app.database.models import PropertyModel, PropertyInterest, UserModel
 from app.core.security import get_current_user
-from app.core.notifications import notify_property_interest
+from app.core.new_sender import notify_broker
 
 router = APIRouter()
 
@@ -129,17 +129,17 @@ def express_interest(
         db.add(interest)
         db.commit()
 
-        # SMS both parties (fire-and-forget; no-op until SMS_PROVIDER is set).
-        # Only on a NEW interest, not on repeat taps.
+        # Notify the broker (SMS + WhatsApp + email; fire-and-forget) on the
+        # broker's own registered contact details only. Only on a NEW
+        # interest, not on repeat taps.
         background_tasks.add_task(
-            notify_property_interest,
-            property_name=prop.property_name,
-            buyer_name=current_user.name,
-            buyer_phone=current_user.phone_number,
-            buyer_email=current_user.email,
-            broker_name=broker.name if broker else None,
+            notify_broker,
             broker_phone=broker.phone_number if broker else None,
             broker_email=broker.email if broker else None,
+            user_name=current_user.name,
+            property_name=prop.property_name,
+            user_phone=current_user.phone_number,
+            user_email=current_user.email,
         )
 
     return {

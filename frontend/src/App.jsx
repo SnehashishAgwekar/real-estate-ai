@@ -1240,7 +1240,7 @@ function AppShell() {
         <PropertyDashboard
           token={token}
           currentUser={currentUser}
-          onAskAI={() => navigate(VIEW_PATHS.chat)}
+          onAskAI={() => { navigate(VIEW_PATHS.chat); createNewChat(); }}
           onProfile={() => navigate(VIEW_PATHS.profile)}
           onLogout={handleLogout}
         />
@@ -1368,7 +1368,7 @@ function AppShell() {
               </button>
             )}
             <div className="text-[10px] font-mono bg-[#F1E9D8] text-[#C6A15B] border border-[#C6A15B]/25 px-3 py-1 rounded-sm uppercase tracking-wider hidden lg:block">
-              {activeView === "chat" ? `Session · ${activeSessionId || "Init"}` : "Gemini 3.6 Flash Vision"}
+              {activeView === "chat" ? `Session · ${activeSessionId || "Init"}` : "Places365 + CLIP ViT-L-14"}
             </div>
             <button
               onClick={handleLogout}
