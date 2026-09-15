@@ -305,6 +305,42 @@ _STOPWORDS = {
     "show", "tell", "me", "please", "there", "any", "and", "property",
 }
 
+# A message made up ONLY of these (plus filler like "there"/"team") is a
+# plain greeting, not a real question — answered with a short intro instead
+# of falling through to a buyer-interest summary that wasn't actually asked for.
+_GREETING_CORE = {
+    "hi", "hii", "hiii", "hello", "hey", "heya", "hiya", "yo", "greetings",
+    "howdy", "sup", "namaste", "morning", "afternoon", "evening",
+}
+_GREETING_FILLER = {"good", "day", "there", "team", "bot", "assistant"}
+
+
+def _is_pure_greeting(message: str) -> bool:
+    tokens = _normalize(message).split()
+    if not tokens:
+        return False
+    if not all(t in _GREETING_CORE or t in _GREETING_FILLER for t in tokens):
+        return False
+    return any(t in _GREETING_CORE for t in tokens)
+
+
+# Anything with none of these words isn't plausibly about buyer interest or
+# listings at all — used to catch off-topic questions instead of silently
+# answering them with an unrelated buyer-interest summary.
+_ON_TOPIC_WORDS = {
+    "buyer", "buyers", "interest", "interested", "interests", "enquiry",
+    "enquiries", "inquiry", "inquiries", "lead", "leads", "listing",
+    "listings", "property", "properties", "sold", "sale", "sell", "selling",
+    "rent", "rented", "renting", "contact", "customer", "customers",
+    "client", "clients", "house", "houses", "apartment", "apartments",
+    "flat", "flats", "villa", "villas", "plot", "plots",
+}
+
+
+def _looks_on_topic(message: str) -> bool:
+    tokens = set(_normalize(message).split())
+    return bool(tokens & _ON_TOPIC_WORDS)
+
 
 def _best_property_match(question: str, properties: List[PropertyModel]) -> Optional[PropertyModel]:
     """Fuzzy-match a property the broker mentioned against their own
@@ -358,7 +394,9 @@ def broker_assistant(
     Answers a broker's question about buyer interest in their own listings —
     "how many buyers are interested in Skyline Residences?", "who wants my
     Vijay Nagar plot?", "which listing has the most interest?", or a general
-    "how many enquiries do I have?".
+    "how many enquiries do I have?". A plain greeting gets a short intro
+    instead of a summary dump, and anything unrelated to buyer interest or
+    listings gets a clear "I can't help with that" instead of a guess.
     """
     properties = (
         db.query(PropertyModel)
@@ -368,6 +406,12 @@ def broker_assistant(
     if not properties:
         return AssistantResponse(
             reply="You don't have any listings yet, so there's no buyer interest to report."
+        )
+
+    if _is_pure_greeting(payload.message):
+        return AssistantResponse(
+            reply="Hi! Ask me things like \"how many buyers are interested in Skyline Residences?\", "
+                  "\"who wants my Vijay Nagar plot?\", or \"which listing has the most interest?\"."
         )
 
     rows = (
@@ -412,8 +456,18 @@ def broker_assistant(
             buyers=_buyer_payload(top_pairs),
         )
 
-    # No specific property recognized and no "top listing" question — give a
-    # per-listing breakdown so the broker can see what to ask about next.
+    # No specific property recognized, no "top listing" question, and nothing
+    # in the message even suggests it's about buyer interest or listings —
+    # decline rather than silently answering an unrelated question.
+    if not _looks_on_topic(payload.message):
+        return AssistantResponse(
+            reply="I can only help with questions about buyer interest in your listings — things like "
+                  "\"how many buyers are interested in <listing name>?\" or \"which listing has the most "
+                  "interest?\". I can't answer anything outside that."
+        )
+
+    # On-topic but no specific property recognized — give a per-listing
+    # breakdown so the broker can see what to ask about next.
     if total == 0:
         return AssistantResponse(reply="No one has shown interest in any of your listings yet.")
 
