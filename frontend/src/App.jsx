@@ -4,7 +4,7 @@ import {
   RotateCcw, Loader2, SlidersHorizontal, ChevronRight, Home, ShieldCheck,
   Cpu, CheckCircle2, Plus, MessageSquare, Trash2, Upload, X, CheckCircle, AlertTriangle,
   LogOut, LogIn, UserPlus, Mail, Lock, Phone, Briefcase, MapPin, BedDouble,
-  Tag, KeyRound, UserCircle
+  Tag, KeyRound, UserCircle, Pencil
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -14,6 +14,7 @@ import CasivaLogo from "./components/CasivaLogo";
 import PropertyDashboard from "./components/PropertyDashboard";
 import MyProfile from "./components/MyProfile";
 import BrokerAssistant from "./components/BrokerAssistant";
+import EditListingModal from "./components/EditListingModal";
 
 const API_STREAM_URL = "http://localhost:8000/api/v1/chat-stream";
 const API_VERIFY_URL = "http://localhost:8000/api/v1/verify-property";
@@ -126,6 +127,7 @@ function AppShell() {
   const [brokerListings, setBrokerListings] = useState(null);
   const [brokerLoading, setBrokerLoading] = useState(false);
   const [brokerError, setBrokerError] = useState("");
+  const [editingListing, setEditingListing] = useState(null);
   const [showListingForm, setShowListingForm] = useState(false);
   const [listingForm, setListingForm] = useState(EMPTY_LISTING);
   const [listingImages, setListingImages] = useState([]);
@@ -1128,6 +1130,15 @@ function AppShell() {
                   {p.area_sqft != null && <span>{p.area_sqft} {p.area_unit || "sqft"}</span>}
                   {p.property_type && <span className="text-[#8B8B8B]">{p.property_type}</span>}
                 </div>
+                <div className="pt-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setEditingListing(p)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-[#F1E9D8] hover:bg-[#E9DFC8] text-[#5B5B5B] border border-[#E4DCC9] rounded-sm text-[10px] font-mono uppercase tracking-wider transition"
+                  >
+                    <Pencil className="w-3 h-3 text-[#C6A15B]" /> Edit Listing
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -1183,6 +1194,22 @@ function AppShell() {
         </div>
       </div>
       <BrokerAssistant token={token} />
+
+      {editingListing && (
+        <EditListingModal
+          token={token}
+          listing={editingListing}
+          onClose={() => setEditingListing(null)}
+          onSaved={(updated) => {
+            setBrokerListings((prev) => (prev || []).map((p) => (p.id === updated.id ? updated : p)));
+            setEditingListing(null);
+          }}
+          onDeleted={(id) => {
+            setBrokerListings((prev) => (prev || []).filter((p) => p.id !== id));
+            setEditingListing(null);
+          }}
+        />
+      )}
     </main>
   );
 
