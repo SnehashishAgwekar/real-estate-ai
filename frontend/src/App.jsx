@@ -26,6 +26,11 @@ const API_INTEREST_URL = (id) => `http://localhost:8000/api/v1/properties/${id}/
 // Origin that serves uploaded media at /static/uploads/... (see backend main.py mount)
 const MEDIA_BASE = "http://localhost:8000";
 
+// Broker-uploaded photos are server-relative ("/static/uploads/xxx.jpg");
+// seed-data photos are already-absolute URLs (e.g. Unsplash). Only prefix
+// the ones that need it.
+const resolveImg = (url) => (url && /^https?:\/\//i.test(url) ? url : `${MEDIA_BASE}${url}`);
+
 const EMPTY_LISTING = {
   property_name: "", city: "", location: "", price_in_inr: "", area_sqft: "",
   property_type: "Apartment", listing_type: "Sale", security_deposit: "",
@@ -1086,10 +1091,10 @@ function AppShell() {
                     {p.image_urls.map((url, i) => (
                       <img
                         key={i}
-                        src={`${MEDIA_BASE}${url}`}
+                        src={resolveImg(url)}
                         alt={`${p.property_name} photo ${i + 1}`}
                         loading="lazy"
-                        onClick={() => setLightboxSrc(`${MEDIA_BASE}${url}`)}
+                        onClick={() => setLightboxSrc(resolveImg(url))}
                         className="h-24 w-32 flex-shrink-0 object-cover rounded-sm border border-[#E4DCC9] bg-[#FAF8F4] cursor-zoom-in hover:brightness-110 transition"
                       />
                     ))}
@@ -1394,8 +1399,8 @@ function AppShell() {
                               {Array.isArray(p.image_urls) && p.image_urls.length > 0 && (
                                 <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
                                   {p.image_urls.map((url, i) => (
-                                    <img key={i} src={`${MEDIA_BASE}${url}`} alt={`${p.property_name} ${i + 1}`} loading="lazy"
-                                      onClick={() => setLightboxSrc(`${MEDIA_BASE}${url}`)}
+                                    <img key={i} src={resolveImg(url)} alt={`${p.property_name} ${i + 1}`} loading="lazy"
+                                      onClick={() => setLightboxSrc(resolveImg(url))}
                                       className="h-20 w-28 flex-shrink-0 object-cover rounded-sm border border-[#E4DCC9] bg-[#FAF8F4] cursor-zoom-in hover:brightness-110 transition" />
                                   ))}
                                 </div>

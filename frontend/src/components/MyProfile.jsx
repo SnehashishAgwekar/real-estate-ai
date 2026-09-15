@@ -8,6 +8,11 @@ import CasivaLogo from "./CasivaLogo";
 const API_BASE = "http://localhost:8000/api/v1";
 const MEDIA_BASE = "http://localhost:8000";
 
+// Broker-uploaded photos are server-relative ("/static/uploads/xxx.jpg");
+// seed-data photos are already-absolute URLs (e.g. Unsplash). Only prefix
+// the ones that need it.
+const resolveImg = (url) => (url && /^https?:\/\//i.test(url) ? url : `${MEDIA_BASE}${url}`);
+
 // "₹ 18,000/mo" for a rental, "₹ 95,00,000" for a sale listing.
 const formatPrice = (p) => {
   const amount = `₹ ${Number(p.price_in_inr || 0).toLocaleString("en-IN")}`;
@@ -409,9 +414,9 @@ export default function MyProfile({ token, currentUser, onBack, onLogout, onUser
                             <div key={item.interest_id} className="border border-[#E4DCC9] rounded-md overflow-hidden bg-[#FAF8F4]/60">
                               {Array.isArray(item.image_urls) && item.image_urls.length > 0 ? (
                                 <img
-                                  src={`${MEDIA_BASE}${item.image_urls[0]}`}
+                                  src={resolveImg(item.image_urls[0])}
                                   alt={item.property_name}
-                                  onClick={() => setLightboxSrc(`${MEDIA_BASE}${item.image_urls[0]}`)}
+                                  onClick={() => setLightboxSrc(resolveImg(item.image_urls[0]))}
                                   className="h-32 w-full object-cover cursor-zoom-in hover:brightness-105 transition"
                                 />
                               ) : (
