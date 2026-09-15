@@ -96,3 +96,37 @@ def save_upload_image(upload: UploadFile) -> str:
         return _upload_to_supabase(data, filename, upload.content_type)
 
     return _save_to_local_disk(data, filename)
+
+
+def delete_uploaded_image(url: str) -> None:
+    """
+    Best-effort delete of a previously-uploaded image, whichever backend
+    stored it — used when a broker removes a photo from a listing or
+    deletes the listing entirely. Silently no-ops for URLs we don't own
+    (e.g. the seed data's external stock photos), and never raises: a
+    failed cleanup shouldn't block the edit/delete the user asked for.
+    """
+    if not url:
+        return
+
+    supabase_prefix = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/"
+    if _supabase_configured() and url.startswith(supabase_prefix):
+        filename = url[len(supabase_prefix):]
+        try:
+            requests.delete(
+                f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{filename}",
+                headers={"Authorization": f"Bearer {SUPABASE_SECRET_KEY}", "apikey": SUPABASE_SECRET_KEY},
+                timeout=15,
+            )
+        except requests.RequestException:
+            pass
+        return
+
+    if url.startswith(f"{UPLOAD_URL_PREFIX}/"):
+        filename = url[len(UPLOAD_URL_PREFIX) + 1:]
+        path = os.path.join(UPLOAD_DIR, filename)
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            pass

@@ -1,3 +1,4 @@
+import json
 import re
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Tuple
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.database.connection import get_db
 from app.database.models import PropertyModel, PropertyInterest, UserModel
 from app.core.security import get_current_user
-from app.core.storage import ALLOWED_IMAGE_TYPES, save_upload_image
+from app.core.storage import ALLOWED_IMAGE_TYPES, delete_uploaded_image, save_upload_image
 
 router = APIRouter()
 
@@ -141,6 +142,137 @@ def create_listing(
         )
     db.refresh(new_property)
     return new_property
+
+
+def _get_own_listing(property_id: int, current_user: UserModel, db: Session) -> PropertyModel:
+    prop = db.query(PropertyModel).filter(PropertyModel.id == property_id).first()
+    if prop is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    if prop.broker_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only manage your own listings",
+        )
+    return prop
+
+
+@router.put("/listings/{property_id}")
+def update_listing(
+    property_id: int,
+    property_name: str = Form(..., min_length=1, max_length=255),
+    city: str = Form(..., min_length=1, max_length=100),
+    location: str = Form(..., min_length=1, max_length=255),
+    price_in_inr: float = Form(..., gt=0),
+    area_sqft: float = Form(..., gt=0),
+    property_type: str = Form("Apartment", min_length=1, max_length=50),
+    listing_type: str = Form("Sale", pattern="^(Sale|Rent)$"),
+    security_deposit: Optional[float] = Form(None, ge=0),
+    bhk: Optional[int] = Form(None, ge=0, le=50),
+    area_unit: str = Form("sqft", max_length=20),
+    builder_name: Optional[str] = Form(None, max_length=150),
+    amenities: Optional[str] = Form(None),
+    availability_status: str = Form("Ready to Move", max_length=50),
+    source_url: Optional[str] = Form(None, max_length=500),
+    # JSON-encoded array of existing image_urls entries to drop, e.g. '["https://.../a.png"]'
+    remove_image_urls: Optional[str] = Form(None),
+    # New photos to append alongside whatever wasn't removed
+    images: List[UploadFile] = File(default=[]),
+    current_user: UserModel = Depends(require_broker),
+    db: Session = Depends(get_db),
+):
+    prop = _get_own_listing(property_id, current_user, db)
+
+    for img in images:
+        if img.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported image type: {img.content_type or 'unknown'}. "
+                       "Allowed: JPEG, PNG, WebP, GIF.",
+            )
+
+    to_remove = set()
+    if remove_image_urls:
+        try:
+            parsed = json.loads(remove_image_urls)
+            if not isinstance(parsed, list):
+                raise ValueError
+            to_remove = set(parsed)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="remove_image_urls must be a JSON array of URLs",
+            )
+
+    current_images = list(prop.image_urls or [])
+    kept_images = [u for u in current_images if u not in to_remove]
+    new_image_urls = [save_upload_image(img) for img in images]
+    final_images = kept_images + new_image_urls
+
+    if not final_images:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A listing must have at least one photo — add a replacement before removing the last one.",
+        )
+
+    prop.property_name = property_name
+    prop.city = city
+    prop.location = location
+    prop.price_in_inr = price_in_inr
+    prop.area_sqft = area_sqft
+    prop.property_type = property_type
+    prop.listing_type = listing_type
+    prop.security_deposit = security_deposit if listing_type == "Rent" else None
+    prop.bhk = bhk
+    prop.area_unit = area_unit
+    prop.builder_name = builder_name
+    prop.amenities = amenities
+    prop.availability_status = availability_status
+    prop.source_url = source_url
+    prop.image_urls = final_images
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        message = str(getattr(exc, "orig", exc)).lower()
+        if "source_url" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A listing with this source URL already exists",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not save changes: the data violates a database constraint.",
+        )
+    db.refresh(prop)
+
+    # Only actually delete the removed images' files once the DB write that
+    # drops their references has committed successfully.
+    for url in current_images:
+        if url in to_remove:
+            delete_uploaded_image(url)
+
+    return prop
+
+
+@router.delete("/listings/{property_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_listing(
+    property_id: int,
+    current_user: UserModel = Depends(require_broker),
+    db: Session = Depends(get_db),
+):
+    """Removes a listing entirely — e.g. once it's sold or rented out.
+    Also clears any buyer 'Interested' records against it (their whole
+    purpose was pointing at this listing) and cleans up its photos."""
+    prop = _get_own_listing(property_id, current_user, db)
+
+    db.query(PropertyInterest).filter(PropertyInterest.property_id == property_id).delete(synchronize_session=False)
+    image_urls = list(prop.image_urls or [])
+    db.delete(prop)
+    db.commit()
+
+    for url in image_urls:
+        delete_uploaded_image(url)
 
 
 # ---------------------------------------------------------------------------
